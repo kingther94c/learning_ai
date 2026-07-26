@@ -1,0 +1,419 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>How a Transformer knows about order — learnai</title>
+<link rel="stylesheet" href="../shared/learnai.css" />
+
+<div class="wrap-wide">
+  <header class="page-head">
+    <h1>How a Transformer knows about order</h1>
+    <p class="sub">
+      <code>softmax(QKᵀ)V</code> is permutation-equivariant: shuffle the tokens and
+      the outputs shuffle with them, unchanged. "dog bites man" and "man bites dog"
+      are the same input. Four ways to fix that, compared side by side.
+    </p>
+    <a class="home-link" href="../index.html">← all pages</a>
+  </header>
+
+  <div class="controls">
+    <div class="control" style="flex:1 1 340px">
+      <label>scheme</label>
+      <div class="btn-row" id="scheme">
+        <button data-value="none">none</button>
+        <button data-value="sinusoidal" aria-pressed="true">sinusoidal</button>
+        <button data-value="learned">learned</button>
+        <button data-value="rope">RoPE</button>
+        <button data-value="alibi">ALiBi</button>
+      </div>
+    </div>
+    <div class="control">
+      <label for="len">positions shown <span class="val" id="len-val"></span></label>
+      <input type="range" id="len" min="8" max="48" step="1" value="24" />
+    </div>
+    <div class="control">
+      <label for="dim">head dimension <span class="val" id="dim-val"></span></label>
+      <input type="range" id="dim" min="4" max="64" step="4" value="32" />
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 id="scheme-title"></h2>
+    <p class="hint" id="scheme-desc"></p>
+    <div class="eq" id="scheme-eq"></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>What it looks like</h2>
+      <p class="hint" id="left-hint"></p>
+      <div class="scroll-x"><div id="left-viz"></div></div>
+      <div id="left-legend" style="margin-top:16px"></div>
+    </div>
+
+    <div class="panel">
+      <h2>What the attention score sees</h2>
+      <p class="hint">
+        The positional contribution to <code>score(i, j)</code> for every pair of
+        positions, content held fixed. This is the diagnostic that matters: a
+        scheme that encodes <em>relative</em> distance shows constant diagonals —
+        the value depends only on <code>i − j</code>, not on where in the sequence
+        you are.
+      </p>
+      <div class="scroll-x"><div id="score-viz"></div></div>
+      <div id="score-legend" style="margin-top:16px"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Does it depend only on distance?</h2>
+    <p class="hint">
+      Each line is one query position, plotted against how far back it is looking.
+      If the lines lie on top of each other, the positional effect is relative.
+      If they scatter, absolute location still matters. A flat line also overlaps,
+      but carries no position signal at all — so overlap is necessary, not
+      sufficient.
+    </p>
+    <div class="grid-2">
+      <div>
+        <div id="rel-chart"></div>
+        <div id="rel-legend" style="margin-top:12px"></div>
+      </div>
+      <div>
+        <div id="verdict"></div>
+      </div>
+    </div>
+    <details class="table-toggle">
+      <summary>show the per-distance numbers as a table</summary>
+      <div id="rel-table"></div>
+    </details>
+  </div>
+
+  <footer class="page-foot">
+    Implementation: <code>learnai/nn/pos_encoding.py</code> ·
+    Notebook: <code>notebooks/04_transformer/02_positional_encoding.ipynb</code>
+  </footer>
+</div>
+
+<script src="../shared/learnai.js"></script>
+<script>
+// ===========================================================================
+// The four schemes, computed exactly as in learnai/nn/pos_encoding.py
+// ===========================================================================
+
+const BASE = 10000;
+
+/** Sinusoidal: PE[p, 2i] = sin(p / base^(2i/d)), odd dims cos. */
+function sinusoidalPE(L, d) {
+  const pe = [];
+  for (let p = 0; p < L; p++) {
+    const row = [];
+    for (let i = 0; i < d; i++) {
+      const pair = Math.floor(i / 2);
+      const angle = p / Math.pow(BASE, (2 * pair) / d);
+      row.push(i % 2 === 0 ? Math.sin(angle) : Math.cos(angle));
+    }
+    pe.push(row);
+  }
+  return pe;
+}
+
+/** Learned: a plain embedding table. At init (and for positions the model rarely
+ *  saw) it is just noise — which is the honest picture of what it starts as. */
+function learnedPE(L, d) {
+  return LA.seededMatrix(L, d, 4242, 1);
+}
+
+/** Rotate the two halves of a vector by angle set by position (LLaMA convention). */
+function ropeApply(v, pos, d) {
+  const half = d / 2;
+  const out = new Array(d);
+  for (let i = 0; i < half; i++) {
+    const theta = pos / Math.pow(BASE, (2 * i) / d);
+    const c = Math.cos(theta), s = Math.sin(theta);
+    out[i] = v[i] * c - v[i + half] * s;
+    out[i + half] = v[i + half] * c + v[i] * s;
+  }
+  return out;
+}
+
+function alibiSlope(head = 0, nHeads = 8) {
+  const ratio = Math.pow(2, -8 / nHeads);
+  return Math.pow(ratio, head + 1);
+}
+
+// ===========================================================================
+// Score matrices: the positional contribution to score(i, j)
+// ===========================================================================
+
+function scoreMatrix(scheme, L, d) {
+  // A fixed random content vector, shared by query and key, so that anything we
+  // see in the matrix comes from position and nothing else.
+  const q = LA.seededNormals(d, 31), k = LA.seededNormals(d, 97);
+  const S = Array.from({ length: L }, () => new Array(L).fill(0));
+
+  if (scheme === "none") {
+    // This matrix shows the positional *contribution*. With no encoding it is 0,
+    // even though the separate content score q·k/√d can be non-zero.
+    return S;
+  }
+
+  if (scheme === "rope") {
+    for (let i = 0; i < L; i++) {
+      const qi = ropeApply(q, i, d);
+      for (let j = 0; j < L; j++) S[i][j] = LA.dot(qi, ropeApply(k, j, d)) / Math.sqrt(d);
+    }
+    return S;
+  }
+
+  if (scheme === "alibi") {
+    const m = alibiSlope(3);
+    const base = LA.dot(q, k) / Math.sqrt(d);
+    for (let i = 0; i < L; i++) for (let j = 0; j < L; j++) S[i][j] = base - m * Math.abs(i - j);
+    return S;
+  }
+
+  // Additive schemes: score the full (content + position) vectors, then subtract
+  // the content-only baseline. The cross terms q·pe_j and pe_i·k depend on
+  // absolute position; showing pe_i·pe_j alone would incorrectly make sinusoidal
+  // encodings look exactly relative.
+  const pe = scheme === "sinusoidal" ? sinusoidalPE(L, d) : learnedPE(L, d);
+  const base = LA.dot(q, k);
+  for (let i = 0; i < L; i++) {
+    const qi = q.map((v, x) => v + pe[i][x]);
+    for (let j = 0; j < L; j++) {
+      const kj = k.map((v, x) => v + pe[j][x]);
+      S[i][j] = (LA.dot(qi, kj) - base) / Math.sqrt(d);
+    }
+  }
+  return S;
+}
+
+// ===========================================================================
+// Copy for each scheme
+// ===========================================================================
+
+const INFO = {
+  none: {
+    title: "No position information at all",
+    eq: "score(i, j) = qᵢ · kⱼ / √d      (independent of i and j)",
+    desc: "The baseline. Attention is a set operation, so without an injected " +
+          "signal every position is interchangeable. The score matrix below is " +
+          "flat: the model literally cannot tell which token came first.",
+    left: "Nothing is added. Every position gets the identical vector.",
+    verdict: ["critical", "Order is invisible. The overlapping flat lines carry " +
+              "zero signal, not useful relative distance."],
+  },
+  sinusoidal: {
+    title: "Sinusoidal — fixed waves added to the embedding (Vaswani, 2017)",
+    eq: "PE[p, 2i] = sin(p / 10000^(2i/d)),   PE[p, 2i+1] = cos(p / 10000^(2i/d))",
+    desc: "Each pair of dimensions is a clock hand at its own frequency: the " +
+          "leftmost ticks every few tokens, the rightmost takes ~10,000 tokens to " +
+          "come round. Together they give every position a distinct fingerprint, " +
+          "with no parameters to learn and no built-in length limit.",
+    left: "The encoding matrix — position down, dimension across. Fast frequencies " +
+          "on the left, slow on the right.",
+    verdict: ["warning", "Relative structure, but not exact. The sinusoid-pair dot " +
+              "product depends on distance; adding the encoding to content also " +
+              "creates absolute content–position cross terms."],
+  },
+  learned: {
+    title: "Learned — one row per position (GPT-2, BERT)",
+    eq: "x[p] += Embedding(p)      (a table with max_len rows)",
+    desc: "Simpler than sinusoids and slightly better in-distribution, with one " +
+          "hard limit: position max_len has no row, so the model cannot run on a " +
+          "longer sequence. Every 'context length' figure quoted for a GPT-2-era " +
+          "model is the height of this table.",
+    left: "The table at initialisation — noise. Structure only appears at positions " +
+          "the model saw often during training.",
+    verdict: ["critical", "Absolute, not relative, and hard-capped at max_len. " +
+              "Position 1025 in a 1024-row table does not exist."],
+  },
+  rope: {
+    title: "RoPE — rotate Q and K by an angle set by position (Su, 2021)",
+    eq: "⟨R_m q, R_n k⟩ = ⟨q, R_(n−m) k⟩      (depends only on n − m, exactly)",
+    desc: "Treat the head dimension as d/2 complex numbers. Rotating the query at " +
+          "position m and the key at position n makes their inner product a " +
+          "function of the rotation difference — relative distance, by " +
+          "construction, with nothing added to the residual stream. This is why " +
+          "every open-weight LLM since LLaMA uses it.",
+    left: "Rotation angle by position and dimension pair. Each column is one " +
+          "complex plane turning at its own rate.",
+    verdict: ["good", "Exactly relative. The identity above is algebraic, not " +
+              "learned, so the diagonals are constant to floating-point precision."],
+  },
+  alibi: {
+    title: "ALiBi — subtract a linear distance penalty (Press, 2021)",
+    eq: "score(i, j) −= m_h · |i − j|      (m_h fixed per head, geometric)",
+    desc: "No position signal in the embeddings at all. Each head subtracts a " +
+          "penalty proportional to how far back it is looking, inside the softmax. " +
+          "Head 0 gets the steepest slope (very local); the last head the gentlest " +
+          "(nearly global), so the heads span a range of receptive fields for free.",
+    left: "The bias added to scores, for one head. Constant along each diagonal by " +
+          "definition.",
+    verdict: ["good", "Exactly relative, and defined for any distance — so it runs " +
+              "on sequences far longer than it trained on. That was the paper's " +
+              "headline result."],
+  },
+};
+
+// ===========================================================================
+// Render
+// ===========================================================================
+
+const state = { scheme: "sinusoidal", L: 24, d: 32 };
+
+function renderLeft() {
+  const { scheme, L, d } = state;
+  const box = document.getElementById("left-viz");
+  document.getElementById("left-hint").textContent = INFO[scheme].left;
+
+  if (scheme === "none") {
+    box.replaceChildren();
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = "— nothing to show —";
+    box.appendChild(p);
+    UI.legend(document.getElementById("left-legend"), []);
+    return;
+  }
+
+  let M, diverging = true, legendItems;
+  if (scheme === "sinusoidal") {
+    M = sinusoidalPE(L, d);
+  } else if (scheme === "learned") {
+    M = learnedPE(L, d);
+  } else if (scheme === "rope") {
+    // Rotation angle (wrapped to [-pi, pi]) for each position x dimension-pair.
+    M = Array.from({ length: L }, (_, p) =>
+      Array.from({ length: d / 2 }, (_, i) => {
+        const th = p / Math.pow(BASE, (2 * i) / d);
+        return Math.atan2(Math.sin(th), Math.cos(th));
+      }));
+  } else {
+    const m = alibiSlope(3);
+    M = Array.from({ length: L }, (_, i) =>
+      Array.from({ length: L }, (_, j) => -m * Math.abs(i - j)));
+  }
+
+  Viz.heatmap(box, M, {
+    cell: Math.max(7, Math.min(18, Math.floor(560 / M[0].length))),
+    diverging,
+    showValues: false,
+    rowLabels: null,
+    colLabels: null,
+    format: (v) => v.toFixed(2),
+  });
+
+  legendItems = [
+    { color: Viz.css("--series-8"), label: "negative" },
+    { color: Viz.css("--surface"), label: "zero" },
+    { color: Viz.css("--series-1"), label: "positive" },
+  ];
+  UI.legend(document.getElementById("left-legend"), legendItems);
+}
+
+function renderScore() {
+  const { scheme, L, d } = state;
+  const S = scoreMatrix(scheme, L, d);
+  Viz.heatmap(document.getElementById("score-viz"), S, {
+    cell: Math.max(9, Math.min(20, Math.floor(520 / L))),
+    diverging: true,
+    showValues: false,
+    format: (v) => v.toFixed(2),
+  });
+  UI.legend(document.getElementById("score-legend"), [
+    { color: Viz.css("--series-8"), label: "score pushed down" },
+    { color: Viz.css("--surface"), label: "no effect" },
+    { color: Viz.css("--series-1"), label: "score pushed up" },
+  ]);
+  return S;
+}
+
+function renderRelative(S) {
+  const { L } = state;
+  // Sample a few query positions spread across the sequence.
+  const queries = [Math.floor(L * 0.35), Math.floor(L * 0.6), L - 1];
+  const maxDist = Math.min(...queries);
+
+  const series = queries.map((i, n) => ({
+    name: `query at ${i}`,
+    color: Viz.series(n),
+    points: Array.from({ length: maxDist + 1 }, (_, dist) => [dist, S[i][i - dist]]),
+  }));
+
+  Viz.lineChart(document.getElementById("rel-chart"), series, {
+    height: 240,
+    xLabel: "distance back (i − j)",
+    yLabel: "positional contribution to score",
+    format: (v) => v.toFixed(2),
+    xTicks: Array.from({ length: Math.min(maxDist + 1, 9) }, (_, t) => {
+      const v = Math.round((t * maxDist) / Math.min(maxDist, 8));
+      return [v, String(v)];
+    }),
+  });
+
+  UI.legend(document.getElementById("rel-legend"),
+    series.map((s) => ({ color: s.color, label: s.name })));
+
+  // Quantify the claim rather than asserting it: how far apart do the curves sit,
+  // relative to how much they vary?
+  let maxSpread = 0, range = 0;
+  for (let dist = 0; dist <= maxDist; dist++) {
+    const vals = queries.map((i) => S[i][i - dist]);
+    maxSpread = Math.max(maxSpread, Math.max(...vals) - Math.min(...vals));
+  }
+  const all = queries.flatMap((i) => Array.from({ length: maxDist + 1 }, (_, dd) => S[i][i - dd]));
+  range = Math.max(...all) - Math.min(...all);
+  const hasSignal = range > 1e-9;
+  const relErr = hasSignal ? maxSpread / range : 0;
+
+  const [status, text] = INFO[state.scheme].verdict;
+  const color = { good: "var(--good)", warning: "var(--warning)", critical: "var(--critical)" }[status];
+  const icon = { good: "✓", warning: "!", critical: "✕" }[status];
+  const heading = state.scheme === "none"
+    ? "No position signal"
+    : status === "good"
+      ? "Relative"
+      : status === "warning"
+        ? "Partly relative"
+        : "Not relative";
+  const measurement = hasSignal
+    ? `Measured spread between the curves: <strong>${(relErr * 100).toFixed(1)}%</strong>
+       of the total range. 0% means every query position sees the same
+       distance profile.`
+    : `Measured range: <strong>0</strong>. Every distance has the same value, so
+       there is no positional information to translate or extrapolate.`;
+
+  document.getElementById("verdict").innerHTML = `
+    <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:14px">
+      <span style="color:${color};font-weight:700;font-size:16px;line-height:1.4">${icon}</span>
+      <div>
+        <div style="font-weight:600;margin-bottom:4px">
+          ${heading}
+        </div>
+        <div class="small" style="color:var(--ink-2)">${text}</div>
+      </div>
+    </div>
+    <div class="small muted">
+      ${measurement}
+    </div>`;
+
+  UI.table(document.getElementById("rel-table"),
+    ["distance back", ...queries.map((i) => `query ${i}`)],
+    Array.from({ length: maxDist + 1 }, (_, dist) =>
+      [dist, ...queries.map((i) => S[i][i - dist].toFixed(4))]));
+}
+
+function renderAll() {
+  const info = INFO[state.scheme];
+  document.getElementById("scheme-title").textContent = info.title;
+  document.getElementById("scheme-desc").textContent = info.desc;
+  document.getElementById("scheme-eq").textContent = info.eq;
+  renderLeft();
+  renderRelative(renderScore());
+}
+
+UI.toggleGroup("scheme", (v) => { state.scheme = v; renderAll(); });
+UI.slider("len", (v) => { state.L = v; renderAll(); }, (v) => String(v));
+UI.slider("dim", (v) => { state.d = v; renderAll(); }, (v) => String(v));
+document.addEventListener("themechange", renderAll);
+</script>

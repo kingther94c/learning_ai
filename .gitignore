@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Jupyter
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Data & artifacts (regenerable — see learnai.data)
+data/cache/
+runs/
+*.pt
+*.ckpt
+*.safetensors
+
+# Exported tensors for interactive pages are checked in ONLY under
+# interactive/*/data/ ; scratch exports live here and are ignored:
+exports/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+.playwright-cli/

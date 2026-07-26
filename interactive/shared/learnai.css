@@ -1,0 +1,304 @@
+/* learnai — shared design system for the interactive pages.
+ *
+ * The palette here is identical to learnai/viz/theme.py, so a matplotlib figure
+ * in a notebook and a page in the browser read as one system.
+ *
+ * Categorical hues are validated for colorblind separation (OKLab ΔE >= 8 on
+ * adjacent pairs, protanopia + deuteranopia); assign --series-1..8 in order and
+ * never cycle past 8.
+ */
+
+:root {
+  color-scheme: light;
+
+  --surface:        #fcfcfb;
+  --page:           #f9f9f7;
+  --raised:         #ffffff;
+  --ink:            #0b0b0b;
+  --ink-2:          #52514e;
+  --ink-muted:      #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --border:         rgba(11, 11, 11, 0.10);
+  --border-strong:  rgba(11, 11, 11, 0.18);
+
+  --series-1: #2a78d6;  --series-2: #eb6834;
+  --series-3: #1baf7a;  --series-4: #eda100;
+  --series-5: #e87ba4;  --series-6: #008300;
+  --series-7: #4a3aa7;  --series-8: #e34948;
+
+  /* sequential ramp — magnitude (attention weights, similarity) */
+  --seq-100: #cde2fb;  --seq-200: #9ec5f4;  --seq-300: #6da7ec;
+  --seq-400: #3987e5;  --seq-500: #256abf;  --seq-600: #184f95;
+  --seq-700: #0d366b;
+
+  --good: #0ca30c;  --warning: #fab219;  --critical: #d03b3b;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --r-sm: 4px;  --r-md: 8px;  --r-lg: 14px;
+  --shadow: 0 1px 2px rgba(11,11,11,.05), 0 8px 24px -12px rgba(11,11,11,.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19;  --page: #0d0d0d;  --raised: #232322;
+    --ink: #ffffff;      --ink-2: #c3c2b7; --ink-muted: #898781;
+    --grid: #2c2c2a;     --axis: #383835;
+    --border: rgba(255,255,255,.10);  --border-strong: rgba(255,255,255,.20);
+    --series-1: #3987e5;  --series-2: #d95926;
+    --series-3: #199e70;  --series-4: #c98500;
+    --series-5: #d55181;  --series-6: #008300;
+    --series-7: #9085e9;  --series-8: #e66767;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19;  --page: #0d0d0d;  --raised: #232322;
+  --ink: #ffffff;      --ink-2: #c3c2b7; --ink-muted: #898781;
+  --grid: #2c2c2a;     --axis: #383835;
+  --border: rgba(255,255,255,.10);  --border-strong: rgba(255,255,255,.20);
+  --series-1: #3987e5;  --series-2: #d95926;
+  --series-3: #199e70;  --series-4: #c98500;
+  --series-5: #d55181;  --series-6: #008300;
+  --series-7: #9085e9;  --series-8: #e66767;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 20px 96px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; }
+.wrap-wide { max-width: 1280px; margin: 0 auto; }
+
+/* ---------- header ---------- */
+
+header.page-head {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 30px 0 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 30px;
+}
+header.page-head h1 { font-size: 25px; font-weight: 650; margin: 0; letter-spacing: -.02em; }
+header.page-head .sub { color: var(--ink-2); font-size: 14px; margin: 0; flex: 1 1 300px; }
+.home-link {
+  color: var(--ink-muted); text-decoration: none; font-size: 13px;
+  font-family: var(--mono); white-space: nowrap;
+}
+.home-link:hover { color: var(--series-1); }
+
+/* ---------- panels ---------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 22px;
+  margin-bottom: 22px;
+}
+.panel > h2 {
+  font-size: 15px; font-weight: 650; margin: 0 0 4px;
+  letter-spacing: -.01em;
+}
+.panel > h2 + .hint { margin-top: 0; }
+.hint { color: var(--ink-2); font-size: 13.5px; margin: 0 0 18px; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.grid-2 > *, .grid-3 > * { min-width: 0; }
+@media (max-width: 860px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ---------- controls ---------- */
+
+.controls {
+  display: flex; flex-wrap: wrap; gap: 20px 26px; align-items: flex-end;
+  padding: 16px 18px; margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.control { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
+.control label {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-muted);
+  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+}
+.control label .val {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0;
+  text-transform: none; color: var(--series-1); font-weight: 600;
+}
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 28px; border-radius: 2px;
+  background: linear-gradient(var(--axis), var(--axis)) center / 100% 3px no-repeat;
+  outline: none; cursor: pointer; margin: 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--series-1); border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--surface);
+  background: var(--series-1); box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer;
+}
+
+input[type="text"], textarea, select {
+  font-family: var(--sans); font-size: 14px;
+  padding: 8px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--ink); width: 100%;
+}
+textarea { font-family: var(--mono); font-size: 13px; line-height: 1.6; resize: vertical; }
+input[type="text"]:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--series-1); outline-offset: -1px; border-color: transparent;
+}
+
+button {
+  font-family: var(--sans); font-size: 13px; font-weight: 550;
+  padding: 8px 14px; border-radius: var(--r-sm); cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--ink);
+  transition: background .12s, border-color .12s;
+}
+button:hover { border-color: var(--series-1); color: var(--series-1); }
+button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+button.primary:hover { filter: brightness(1.08); color: #fff; }
+button[aria-pressed="true"] {
+  background: var(--series-1); border-color: var(--series-1); color: #fff;
+}
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- typography helpers ---------- */
+
+code, .mono { font-family: var(--mono); font-size: .92em; }
+code {
+  background: color-mix(in srgb, var(--series-1) 9%, transparent);
+  padding: .12em .38em; border-radius: 3px;
+}
+.eq {
+  font-family: var(--mono); font-size: 14px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-left: 3px solid var(--series-1);
+  padding: 12px 16px; border-radius: var(--r-sm);
+  margin: 16px 0; overflow-x: auto; white-space: nowrap;
+}
+.note {
+  border-left: 3px solid var(--series-4);
+  padding: 2px 0 2px 16px; margin: 20px 0;
+  color: var(--ink-2); font-size: 14px;
+}
+.note strong { color: var(--ink); font-weight: 600; }
+.muted { color: var(--ink-muted); }
+.small { font-size: 12.5px; }
+
+/* ---------- legend ---------- */
+
+.legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12.5px; }
+.legend .item { display: flex; gap: 6px; align-items: center; color: var(--ink-2); }
+.legend .swatch { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+
+/* ---------- data table (the accessibility fallback for every chart) ---------- */
+
+.table-wrap { overflow-x: auto; margin-top: 14px; }
+table.data {
+  border-collapse: collapse; font-size: 12.5px;
+  font-variant-numeric: tabular-nums; width: 100%;
+}
+table.data th, table.data td {
+  padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+table.data th {
+  color: var(--ink-muted); font-weight: 600; font-size: 11px;
+  letter-spacing: .05em; text-transform: uppercase;
+}
+table.data td:first-child, table.data th:first-child { text-align: left; }
+
+details.table-toggle > summary {
+  cursor: pointer; color: var(--ink-muted); font-size: 12.5px;
+  padding: 6px 0; list-style: none;
+}
+details.table-toggle > summary::-webkit-details-marker { display: none; }
+details.table-toggle > summary::before { content: "▸ "; }
+details.table-toggle[open] > summary::before { content: "▾ "; }
+details.table-toggle > summary:hover { color: var(--series-1); }
+
+/* ---------- tooltip ---------- */
+
+#tip {
+  position: fixed; pointer-events: none; z-index: 999;
+  background: var(--ink); color: var(--page);
+  padding: 7px 10px; border-radius: var(--r-sm);
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  opacity: 0; transition: opacity .1s; max-width: 280px;
+  box-shadow: var(--shadow);
+}
+#tip.on { opacity: 1; }
+
+/* ---------- scrollable overflow container (never scroll the body) ---------- */
+
+.scroll-x { overflow-x: auto; max-width: 100%; min-width: 0; }
+
+/* ---------- theme toggle ---------- */
+
+#theme-toggle {
+  position: fixed; right: 16px; bottom: 16px; z-index: 50;
+  width: 38px; height: 38px; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; font-size: 15px;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+
+/* ---------- footer ---------- */
+
+footer.page-foot {
+  margin-top: 46px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-muted); font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+footer.page-foot a { color: var(--ink-muted); }
+
+/* ---------- narrow screens ---------- */
+
+@media (max-width: 520px) {
+  body { padding: 0 12px 88px; }
+
+  header.page-head {
+    padding: 22px 0 16px;
+    margin-bottom: 22px;
+    gap: 8px 12px;
+  }
+  header.page-head h1 { font-size: 22px; }
+  header.page-head .sub { flex-basis: 100%; }
+
+  .panel { padding: 18px; }
+  .controls { padding: 14px; gap: 14px; }
+  .controls > .control {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+
+  button { min-height: 40px; }
+  #theme-toggle {
+    right: 10px; bottom: 10px;
+    width: 42px; height: 42px;
+  }
+}

@@ -1,0 +1,542 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Attention, step by step — learnai</title>
+<link rel="stylesheet" href="../shared/learnai.css" />
+
+<div class="wrap-wide">
+  <header class="page-head">
+    <h1>Attention, step by step</h1>
+    <p class="sub">
+      Every number below is computed live in your browser — the same
+      <code>softmax(QKᵀ/√d)V</code> as <code>learnai/nn/attention.py</code>.
+      Change anything and the matmul re-runs.
+    </p>
+    <a class="home-link" href="../index.html">← all pages</a>
+  </header>
+
+  <div class="controls">
+    <div class="control" style="flex: 2 1 340px">
+      <label for="sentence">sentence</label>
+      <input type="text" id="sentence" value="the quick cat chased a small mouse" />
+    </div>
+    <div class="control">
+      <label for="head">head behaviour</label>
+      <select id="head">
+        <option value="content">content matching — Wq = Wk = I on meaning</option>
+        <option value="prev">previous token — Wq rotates position by −1</option>
+        <option value="random">random init — untrained</option>
+      </select>
+    </div>
+    <div class="control" style="min-width: 200px">
+      <label for="temp">softmax temperature <span class="val" id="temp-val"></span></label>
+      <input type="range" id="temp" min="0.1" max="4" step="0.05" value="1" />
+    </div>
+    <div class="control" style="min-width: 130px">
+      <label>options</label>
+      <div class="btn-row">
+        <button id="causal" aria-pressed="false">causal mask</button>
+        <button id="scaled" aria-pressed="true">÷ √d</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= one row, in full ================= -->
+  <div class="panel">
+    <h2>One query token, all the way through</h2>
+    <p class="hint">
+      Click any token to make it the query. This is a single row of the attention
+      matrix — the token asks a question, every token answers, and the answers get
+      averaged.
+    </p>
+
+    <div id="token-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px"></div>
+
+    <div class="grid-2">
+      <div>
+        <div class="eq" id="eq-line">score(q, kⱼ) = q · kⱼ / √d</div>
+        <div id="score-bars"></div>
+        <p class="small muted" style="margin-top:10px">
+          Raw compatibility. Can be any real number, positive or negative.
+        </p>
+      </div>
+      <div>
+        <div class="eq">weightⱼ = softmax(score)ⱼ &nbsp;→&nbsp; Σ weightⱼ = 1</div>
+        <div id="weight-bars"></div>
+        <p class="small muted" style="margin-top:10px">
+          <span id="entropy-note"></span>
+        </p>
+      </div>
+    </div>
+
+    <details class="table-toggle" style="margin-top:16px">
+      <summary>show the numbers as a table</summary>
+      <div id="row-table"></div>
+    </details>
+  </div>
+
+  <!-- ================= the whole matrix ================= -->
+  <div class="panel">
+    <h2>The whole matrix</h2>
+    <p class="hint">
+      Row <em>i</em> is the distribution token <em>i</em> attends with; every row sums to 1.
+      Hover a cell for the exact weight. Turn on the causal mask and the upper
+      triangle vanishes — that single change is the whole difference between BERT
+      and GPT.
+    </p>
+    <div class="scroll-x"><div id="matrix"></div></div>
+    <div id="matrix-legend" style="margin-top:16px"></div>
+  </div>
+
+  <!-- ================= why sqrt(d) ================= -->
+  <div class="panel">
+    <h2>Why divide by √d?</h2>
+    <p class="hint">
+      Dot products of random vectors grow like √d. Feed those into softmax and it
+      saturates — one weight goes to 1, the rest to 0, and the gradient dies. The
+      curves below are measured live: random Q and K at each width, attention
+      entropy averaged over rows. Higher entropy = the head is still looking at
+      more than one place.
+    </p>
+    <div class="grid-2">
+      <div>
+        <div id="entropy-chart"></div>
+        <div id="entropy-legend" style="margin-top:12px"></div>
+      </div>
+      <div>
+        <p style="margin-top:0">
+          Unscaled, entropy collapses toward 0 as the head gets wider: by
+          <code>d = 256</code> the softmax is a hard argmax and
+          <code>∂loss/∂score ≈ 0</code> everywhere. Scaled, entropy stays flat —
+          the head keeps a usable gradient at any width.
+        </p>
+        <p>
+          This is why the paper calls it <em>scaled</em> dot-product attention. It is
+          one <code>/ math.sqrt(d_k)</code> and without it deep Transformers do not
+          train.
+        </p>
+        <div class="note">
+          <strong>Try it:</strong> turn off <code>÷ √d</code> above and watch the
+          weight bars in the first panel snap to a single spike.
+        </div>
+      </div>
+    </div>
+    <details class="table-toggle">
+      <summary>show the entropy numbers as a table</summary>
+      <div id="entropy-table"></div>
+    </details>
+  </div>
+
+  <!-- ================= a model that actually learned ================= -->
+  <div class="panel" id="real-panel" hidden>
+    <h2>The same mechanism, in a model that learned something</h2>
+    <p class="hint" id="real-hint"></p>
+    <div class="controls" style="margin-bottom:18px">
+      <div class="control" style="min-width:200px">
+        <label>layer</label>
+        <div class="btn-row" id="real-layer"></div>
+      </div>
+      <div class="control" style="min-width:220px">
+        <label>head</label>
+        <div class="btn-row" id="real-head"></div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="scroll-x"><div id="real-map"></div></div>
+      <div>
+        <div id="real-stats"></div>
+        <p class="small muted">
+          These maps come from a 4-layer character-level GPT trained on
+          tinyshakespeare, captured with
+          <code>learnai.interp.capture_attention</code> and written out by
+          <code>tools/build_data.py</code>. Nothing is hand-designed here — this is
+          what gradient descent produced.
+        </p>
+        <div class="note">
+          <strong>What to look for.</strong> Sweep the heads and you will find the
+          recurring shapes: a <em>diagonal</em> (attends to itself), a
+          <em>sub-diagonal</em> (the previous-token head — the same behaviour built
+          by hand at the top of this page), a bright <em>first column</em> (an
+          attention sink, where a head parks when it has nothing to do), and
+          <em>vertical stripes</em> on delimiters like the newline.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="page-foot">
+    Implementation: <code>learnai/nn/attention.py</code> ·
+    Notebook: <code>notebooks/04_transformer/01_build_a_transformer.ipynb</code>
+  </footer>
+</div>
+
+<script src="data/gpt_attention.js"></script>
+<script src="../shared/learnai.js"></script>
+<script>
+// ===========================================================================
+// A small interpretable embedding space.
+//
+// dims 0-5  meaning:  [animate, action, object, determiner, modifier, relation]
+// dims 6-9  position: [sin(p/w1), cos(p/w1), sin(p/w2), cos(p/w2)]
+//
+// Splitting the vector this way is what lets us hand-build the two head types
+// below: a content head reads only dims 0-5, a previous-token head reads only
+// dims 6-9. Real heads learn some blend of the two.
+// ===========================================================================
+
+const D_SEM = 6, D_POS = 4, D = D_SEM + D_POS;
+const W1 = 7, W2 = 30;                       // the two positional wavelengths
+
+// Meaning vectors are one-hot times this. Real embeddings have norms well above
+// 1; at norm 1 the dot products are so small that softmax comes out nearly
+// uniform and no pattern is visible. This is the same reason real models scale
+// their embedding init deliberately.
+const SEM_SCALE = 2.5;
+
+const LEXICON = {
+  the:[0,0,0,1,0,0], a:[0,0,0,1,0,0], an:[0,0,0,1,0,0],
+  cat:[1,0,1,0,0,0], dog:[1,0,1,0,0,0], mouse:[1,0,1,0,0,0],
+  bird:[1,0,1,0,0,0], man:[1,0,1,0,0,0], woman:[1,0,1,0,0,0], child:[1,0,1,0,0,0],
+  book:[0,0,1,0,0,0], mat:[0,0,1,0,0,0], table:[0,0,1,0,0,0],
+  ball:[0,0,1,0,0,0], house:[0,0,1,0,0,0], tree:[0,0,1,0,0,0],
+  sat:[0,1,0,0,0,0], ran:[0,1,0,0,0,0], chased:[0,1,0,0,0,0],
+  ate:[0,1,0,0,0,0], saw:[0,1,0,0,0,0], slept:[0,1,0,0,0,0], jumped:[0,1,0,0,0,0],
+  big:[0,0,0,0,1,0], small:[0,0,0,0,1,0], quick:[0,0,0,0,1,0],
+  lazy:[0,0,0,0,1,0], red:[0,0,0,0,1,0], old:[0,0,0,0,1,0],
+  on:[0,0,0,0,0,1], in:[0,0,0,0,0,1], under:[0,0,0,0,0,1], over:[0,0,0,0,0,1],
+};
+
+/** Deterministic small jitter so two words of the same class are not identical
+ *  — otherwise a content head cannot tell "cat" from "dog" at all. */
+function jitter(word, i) {
+  let h = 2166136261;
+  for (const ch of word + ":" + i) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) / 4294967296 - 0.5) * 0.34;
+}
+
+function semantic(word) {
+  const base = LEXICON[word] || null;
+  if (base) return base.map((v, i) => v * SEM_SCALE + jitter(word, i));
+  // Unknown word: a stable pseudo-random point in meaning space.
+  return Array.from({ length: D_SEM }, (_, i) => jitter(word, i) * 3.5);
+}
+
+function positional(p) {
+  return [
+    Math.sin(p / W1), Math.cos(p / W1),
+    Math.sin(p / W2), Math.cos(p / W2),
+  ];
+}
+
+function embed(tokens) {
+  return tokens.map((w, p) => [...semantic(w), ...positional(p)]);
+}
+
+// ===========================================================================
+// Three heads, as explicit weight matrices (D x D).
+// ===========================================================================
+
+function zeros() {
+  return Array.from({ length: D }, () => new Array(D).fill(0));
+}
+
+/** Content matching: keep meaning, discard position. q·k is then just the
+ *  similarity of the two words' meanings. */
+function contentHead() {
+  const Wq = zeros(), Wk = zeros();
+  for (let i = 0; i < D_SEM; i++) { Wq[i][i] = 1; Wk[i][i] = 1; }
+  return { Wq, Wk };
+}
+
+/** Previous token: keep position, discard meaning, and rotate the query's
+ *  position back by one step.
+ *
+ *  This is Vaswani's observation made concrete. For a sinusoidal pair
+ *  (sin θp, cos θp), shifting the position by −1 is the 2x2 rotation by −θ.
+ *  After the rotation, q_i · k_j peaks exactly at j = i − 1.
+ */
+function prevTokenHead() {
+  const Wq = zeros(), Wk = zeros();
+  [[6, 1 / W1], [8, 1 / W2]].forEach(([o, theta]) => {
+    const c = Math.cos(theta), s = Math.sin(theta);
+    // rotate (sin, cos) backwards by one position
+    Wq[o][o] = c;      Wq[o + 1][o] = -s;
+    Wq[o][o + 1] = s;  Wq[o + 1][o + 1] = c;
+    Wk[o][o] = 1;      Wk[o + 1][o + 1] = 1;
+  });
+  return { Wq, Wk };
+}
+
+/** What an untrained head looks like: no structure, near-uniform attention. */
+function randomHead() {
+  return {
+    Wq: LA.seededMatrix(D, D, 1234, 1 / Math.sqrt(D)),
+    Wk: LA.seededMatrix(D, D, 5678, 1 / Math.sqrt(D)),
+  };
+}
+
+const HEADS = { content: contentHead, prev: prevTokenHead, random: randomHead };
+const SEM_NAMES = ["animate", "action", "object", "determiner", "modifier", "relation"];
+
+// ===========================================================================
+// State + render
+// ===========================================================================
+
+const state = { tokens: [], query: 0, head: "content", temp: 1, causal: false, scaled: true };
+
+function tokenize(s) {
+  return (s.toLowerCase().match(/[\w']+|[^\w\s]/g) || []).slice(0, 14);
+}
+
+function compute() {
+  const E = embed(state.tokens);
+  const { Wq, Wk } = HEADS[state.head]();
+  const Q = LA.matmul(E, Wq);
+  const K = LA.matmul(E, Wk);
+  // Values carry meaning only — the output of the head is a blend of meanings.
+  const V = E.map((e) => e.slice(0, D_SEM));
+  const dk = state.head === "prev" ? D_POS : D_SEM;
+  const r = LA.attention(Q, K, V, {
+    causal: state.causal,
+    temperature: state.temp,
+    scale: state.scaled ? 1 / Math.sqrt(dk) : 1,
+  });
+  return { ...r, V, dk };
+}
+
+function renderTokens() {
+  const box = document.getElementById("token-row");
+  box.replaceChildren(
+    ...state.tokens.map((t, i) => {
+      const b = document.createElement("button");
+      b.textContent = t;
+      b.setAttribute("aria-pressed", String(i === state.query));
+      b.style.fontFamily = "var(--mono)";
+      b.addEventListener("click", () => { state.query = i; render(); });
+      return b;
+    })
+  );
+}
+
+function render() {
+  if (state.query >= state.tokens.length) state.query = state.tokens.length - 1;
+  const { scores, weights, dk } = compute();
+  const toks = state.tokens;
+  const i = state.query;
+
+  document.getElementById("eq-line").textContent =
+    state.scaled
+      ? `score(q${i}, kⱼ) = q${i} · kⱼ / √${dk}`
+      : `score(q${i}, kⱼ) = q${i} · kⱼ      (unscaled)`;
+
+  renderTokens();
+
+  const visible = toks.map((t, j) => ({ t, j })).filter(({ j }) => isFinite(scores[i][j]));
+
+  Viz.bars(
+    document.getElementById("score-bars"),
+    visible.map(({ t, j }) => ({ label: t, value: scores[i][j] })),
+    {
+      max: Math.max(...visible.map(({ j }) => Math.abs(scores[i][j])), 1e-6),
+      format: (v) => v.toFixed(2),
+      title: `Compatibility scores from query token ${toks[i]}`,
+      // A score can be negative; color the sign, keep the length the magnitude.
+      colorFn: (d) => (d.value >= 0 ? "var(--series-1)" : "var(--series-8)"),
+    }
+  );
+
+  Viz.bars(
+    document.getElementById("weight-bars"),
+    visible.map(({ t, j }) => ({ label: t, value: weights[i][j] })),
+    {
+      max: 1,
+      format: (v) => v.toFixed(3),
+      title: `Attention weights from query token ${toks[i]}`,
+      colorFn: (d, k) => (visible[k].j === i ? "var(--series-3)" : "var(--series-1)"),
+    }
+  );
+
+  const H = LA.entropy(weights[i].filter(isFinite));
+  const n = visible.length;
+  const maxH = Math.log(n);
+  const eff = Math.exp(H);
+  document.getElementById("entropy-note").innerHTML =
+    `entropy ${H.toFixed(2)} nats of a possible ${maxH.toFixed(2)} — ` +
+    `this token is effectively looking at <strong>${eff.toFixed(1)}</strong> of ${n} positions.`;
+
+  UI.table(
+    document.getElementById("row-table"),
+    ["key token", "score", "weight", "share"],
+    visible.map(({ t, j }) => [
+      t, scores[i][j].toFixed(4), weights[i][j].toFixed(4),
+      (weights[i][j] * 100).toFixed(1) + "%",
+    ])
+  );
+
+  // full matrix
+  Viz.heatmap(document.getElementById("matrix"), weights, {
+    rowLabels: toks, colLabels: toks,
+    cell: Math.max(26, Math.min(44, Math.floor(720 / toks.length))),
+    format: (v) => (v >= 0.995 ? "1" : v.toFixed(2).slice(1)),
+    max: 1,
+    title: "Attention weight matrix; choose a cell to inspect its query row",
+    onHover: (r) => { if (r !== state.query) { state.query = r; render(); } },
+  });
+
+  UI.legend(document.getElementById("matrix-legend"), [
+    { color: Viz.seq(0.05), label: "weight 0 — ignored" },
+    { color: Viz.seq(0.5), label: "0.5" },
+    { color: Viz.seq(1), label: "1.0 — all attention here" },
+  ]);
+}
+
+// --------------------------------------------------------------------------
+// The sqrt(d) experiment: measured, not asserted.
+// --------------------------------------------------------------------------
+
+function entropyExperiment() {
+  const dims = [2, 4, 8, 16, 32, 64, 128, 256, 512];
+  const T = 12;
+  const scaled = [], unscaled = [];
+
+  dims.forEach((d, di) => {
+    // Fresh random Q and K at this width — unit-variance entries, as at init.
+    const Q = LA.seededMatrix(T, d, 991 + di * 17);
+    const K = LA.seededMatrix(T, d, 7717 + di * 31);
+    for (const [arr, s] of [[scaled, 1 / Math.sqrt(d)], [unscaled, 1]]) {
+      const { weights } = LA.attention(Q, K, Q, { scale: s });
+      const meanH = weights.reduce((acc, r) => acc + LA.entropy(r), 0) / T;
+      arr.push([Math.log2(d), meanH]);
+    }
+  });
+
+  Viz.lineChart(document.getElementById("entropy-chart"), [
+    { name: "÷ √d", color: "var(--series-1)", points: scaled },
+    { name: "unscaled", color: "var(--series-2)", points: unscaled },
+  ], {
+    height: 250,
+    xLabel: "head width d  (log₂ scale)",
+    yLabel: "mean attention entropy (nats)",
+    format: (v) => v.toFixed(1),
+    xTicks: dims.map((d) => [Math.log2(d), String(d)]),
+  });
+
+  UI.legend(document.getElementById("entropy-legend"), [
+    { color: Viz.css("--series-1"), label: "÷ √d — entropy holds steady" },
+    { color: Viz.css("--series-2"), label: "unscaled — softmax saturates" },
+  ]);
+
+  UI.table(
+    document.getElementById("entropy-table"),
+    ["d", "entropy ÷√d", "entropy unscaled", "max possible"],
+    dims.map((d, i) => [
+      d, scaled[i][1].toFixed(3), unscaled[i][1].toFixed(3), Math.log(T).toFixed(3),
+    ])
+  );
+}
+
+// --------------------------------------------------------------------------
+
+function setSentence(s) {
+  state.tokens = tokenize(s);
+  if (!state.tokens.length) state.tokens = ["empty"];
+  state.query = Math.min(state.query, state.tokens.length - 1);
+}
+
+// Seed the state BEFORE wiring controls — UI.slider fires its callback once on
+// setup, and that callback renders.
+setSentence(document.getElementById("sentence").value);
+
+document.getElementById("sentence").addEventListener("input", (e) => {
+  setSentence(e.target.value);
+  render();
+});
+document.getElementById("head").addEventListener("change", (e) => {
+  state.head = e.target.value;
+  render();
+});
+UI.slider("temp", (v) => { state.temp = v; render(); }, (v) => v.toFixed(2));
+
+for (const [id, key] of [["causal", "causal"], ["scaled", "scaled"]]) {
+  const btn = document.getElementById(id);
+  btn.addEventListener("click", () => {
+    state[key] = !state[key];
+    btn.setAttribute("aria-pressed", String(state[key]));
+    render();
+  });
+}
+
+// --------------------------------------------------------------------------
+// Real attention maps, if `make data` has been run.
+// --------------------------------------------------------------------------
+
+const REAL = UI.data("gpt_attention");
+const realState = { layer: 0, head: 0 };
+
+function buttonRow(containerId, n, key, labelFn) {
+  const box = document.getElementById(containerId);
+  box.replaceChildren(...Array.from({ length: n }, (_, i) => {
+    const b = document.createElement("button");
+    b.textContent = labelFn(i);
+    b.setAttribute("aria-pressed", String(realState[key] === i));
+    b.addEventListener("click", () => { realState[key] = i; renderReal(); });
+    return b;
+  }));
+}
+
+function renderReal() {
+  if (!REAL) return;
+  const layer = REAL.layers[realState.layer];
+  const nHeads = layer.heads.length;
+  if (realState.head >= nHeads) realState.head = 0;
+  const M = layer.heads[realState.head];
+  const toks = REAL.tokens;
+
+  buttonRow("real-layer", REAL.layers.length, "layer", (i) => REAL.layers[i].name);
+  buttonRow("real-head", nHeads, "head", (i) => `head ${i}`);
+
+  Viz.heatmap(document.getElementById("real-map"), M, {
+    rowLabels: toks, colLabels: toks,
+    cell: Math.max(11, Math.min(24, Math.floor(560 / toks.length))),
+    max: 1, showValues: false,
+    title: `Learned attention map, ${layer.name}, head ${realState.head}`,
+  });
+
+  // Two numbers that say more about a head than staring at it does.
+  const H = M.map((r) => LA.entropy(r));
+  const meanH = H.reduce((a, b) => a + b, 0) / H.length;
+  // How much mass sits on the immediately preceding token, averaged over rows
+  // that have one — the signature of a previous-token head.
+  let prev = 0, prevN = 0;
+  M.forEach((r, i) => { if (i > 0) { prev += r[i - 1]; prevN++; } });
+  const prevFrac = prevN ? prev / prevN : 0;
+  const sink = M.reduce((a, r) => a + r[0], 0) / M.length;
+
+  const rows = [
+    ["mean entropy", `${meanH.toFixed(2)} nats`,
+     meanH < 0.7 ? "focused on ~1 position" : "spread out"],
+    ["weight on previous token", `${(prevFrac * 100).toFixed(1)}%`,
+     prevFrac > 0.4 ? "a previous-token head" : "not primarily positional"],
+    ["weight on token 0", `${(sink * 100).toFixed(1)}%`,
+     sink > 0.4 ? "acting as an attention sink" : "—"],
+  ];
+  document.getElementById("real-stats").innerHTML = rows.map(([k, v, note]) => `
+    <div style="margin-bottom:14px">
+      <div class="small muted" style="text-transform:uppercase;letter-spacing:.06em;
+           font-size:11px;font-weight:600">${k}</div>
+      <div style="font-size:20px;font-weight:600;font-family:var(--mono)">${v}</div>
+      <div class="small" style="color:var(--ink-2)">${note}</div>
+    </div>`).join("");
+}
+
+if (REAL) {
+  document.getElementById("real-panel").hidden = false;
+  document.getElementById("real-hint").textContent =
+    `Attention from ${REAL.meta.model || "a trained GPT"}, reading the prompt ` +
+    JSON.stringify(REAL.meta.prompt || "").slice(1, -1) + ".";
+  renderReal();
+}
+
+render();
+entropyExperiment();
+document.addEventListener("themechange", () => { render(); entropyExperiment(); renderReal(); });
+</script>

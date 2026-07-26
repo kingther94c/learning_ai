@@ -1,0 +1,382 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BPE, one merge at a time — learnai</title>
+<link rel="stylesheet" href="../shared/learnai.css" />
+
+<div class="wrap-wide">
+  <header class="page-head">
+    <h1>BPE, one merge at a time</h1>
+    <p class="sub">
+      A real Byte-Pair Encoding tokenizer, trained in your browser on the corpus
+      below. Drag the merge slider and watch characters fuse into subwords — the
+      same algorithm as <code>learnai/data/tokenizers.py</code>.
+    </p>
+    <a class="home-link" href="../index.html">← all pages</a>
+    <a class="home-link" href="../index.html">← all pages</a>
+  </header>
+
+  <div class="controls">
+    <div class="control" style="flex: 1 1 420px">
+      <label for="text">text to tokenize</label>
+      <input type="text" id="text" value="the transformer model learns tokenization unpredictably" />
+    </div>
+    <div class="control" style="flex: 1 1 300px">
+      <label for="merges">merges learned <span class="val" id="merges-val"></span></label>
+      <input type="range" id="merges" min="0" max="400" step="1" value="120" />
+    </div>
+  </div>
+
+  <!-- ============ the split ============ -->
+  <div class="panel">
+    <h2>How your text splits</h2>
+    <p class="hint">
+      Each box is one token — one row of the embedding matrix, one position in the
+      context window. Colour marks how many merges built it: pale = still a raw
+      character, dark = a multi-character subword.
+    </p>
+    <div id="tokens" style="margin-bottom:20px"></div>
+    <div class="grid-3" id="stats"></div>
+    <div id="token-legend" style="margin-top:18px"></div>
+  </div>
+
+  <!-- ============ compression curve ============ -->
+  <div class="panel">
+    <h2>What merges buy you</h2>
+    <p class="hint">
+      Every merge adds one row to the embedding matrix and shortens sequences a
+      little. The curve flattens fast — this is the diminishing return that sets
+      real vocabulary sizes around 30k–100k rather than a million.
+    </p>
+    <div class="grid-2">
+      <div>
+        <div id="curve"></div>
+        <div id="curve-legend" style="margin-top:12px"></div>
+      </div>
+      <div>
+        <p style="margin-top:0">
+          At 0 merges this is a character tokenizer: no token is ever unknown, but
+          a 1,000-character passage costs 1,000 positions and the model has to
+          learn spelling before it can learn syntax.
+        </p>
+        <p>
+          Every merge is recorded <em>in order</em>, and encoding replays them in
+          that order. Merge order <em>is</em> the tokenizer — replay the same
+          merges in a different order and you get a different, wrong split.
+        </p>
+        <div class="note">
+          <strong>Why GPT can't spell:</strong> once <code>straw</code> and
+          <code>berry</code> are single tokens, the letters inside them are simply
+          not in the model's input. Counting the r's means recovering information
+          the tokenizer already threw away.
+        </div>
+      </div>
+    </div>
+    <details class="table-toggle">
+      <summary>show the compression numbers as a table</summary>
+      <div id="curve-table"></div>
+    </details>
+  </div>
+
+  <!-- ============ merge log ============ -->
+  <div class="panel">
+    <h2>The merges it learned, in order</h2>
+    <p class="hint">
+      Rank 0 was the most frequent adjacent pair in the corpus. Notice the shape of
+      the list: common letter pairs first, then suffixes like <code>ing</code> and
+      <code>tion</code>, then whole frequent words — and note that a leading space
+      is part of the token, which is why <code>" the"</code> and <code>"the"</code>
+      are different tokens in every GPT model.
+    </p>
+    <div class="scroll-x"><div id="merge-log"></div></div>
+  </div>
+
+  <!-- ============ corpus ============ -->
+  <div class="panel">
+    <h2>The training corpus</h2>
+    <p class="hint">
+      Small on purpose, so training finishes instantly. A tokenizer inherits its
+      corpus's biases: train on English and the merges encode English, which is why
+      the same sentence costs 2–3× more tokens in Thai or Hindi than in English.
+    </p>
+    <textarea id="corpus" rows="7"></textarea>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="primary" id="retrain">retrain on this corpus</button>
+      <span class="small muted" id="train-status" style="align-self:center"></span>
+    </div>
+  </div>
+
+  <footer class="page-foot">
+    Implementation: <code>learnai/data/tokenizers.py</code> ·
+    Notebook: <code>notebooks/03_nlp/01_tokenization.ipynb</code>
+  </footer>
+</div>
+
+<script src="../shared/learnai.js"></script>
+<script>
+// ===========================================================================
+// BPE — the same algorithm as learnai/data/tokenizers.py, in JavaScript.
+// ===========================================================================
+
+// GPT-2's pre-tokenizer. The leading-space alternatives are the important part:
+// they keep " the" and "the" as separate tokens and stop merges crossing words.
+const PAT = /'s|'t|'re|'ve|'m|'ll|'d| ?[a-zA-Z]+| ?[0-9]+| ?[^\sa-zA-Z0-9]+|\s+/g;
+
+const CORPUS = `The transformer architecture replaced recurrence with attention.
+A language model predicts the next token given the tokens before it.
+Training a model means adjusting its parameters so that prediction improves.
+Attention lets every position read from every other position directly.
+The model learns representations of words, and those representations are vectors.
+Tokenization decides what a token is, and everything downstream depends on it.
+Prediction, representation, attention, and generation are the recurring words here.
+Understanding the transformer means understanding attention, and understanding
+attention means understanding the dot product between a query and a key.
+Models generate text one token at a time, sampling from a predicted distribution.
+The tokenizer is trained before the model, on the same text the model will read.
+Learning happens by gradient descent on the prediction error over many examples.
+Every parameter of the model is a number that training gradually adjusts.
+Representation learning is the reason deep models generalize beyond their data.
+Unpredictable, unremarkable, and unbelievable share a prefix the merges will find.
+Tokenization, generation, representation, and prediction share a suffix too.`;
+
+function pairCounts(wordFreqs) {
+  const counts = new Map();
+  for (const [key, { syms, freq }] of wordFreqs) {
+    for (let i = 0; i < syms.length - 1; i++) {
+      const p = syms[i] + "\u0000" + syms[i + 1];
+      counts.set(p, (counts.get(p) || 0) + freq);
+    }
+  }
+  return counts;
+}
+
+function mergeWord(syms, a, b) {
+  const out = [];
+  for (let i = 0; i < syms.length; ) {
+    if (i < syms.length - 1 && syms[i] === a && syms[i + 1] === b) {
+      out.push(a + b);
+      i += 2;
+    } else {
+      out.push(syms[i]);
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/** Learn up to `maxMerges` merges. Returns the ordered merge list. */
+function trainBPE(text, maxMerges) {
+  const words = text.match(PAT) || [];
+  const wordFreqs = new Map();
+  for (const w of words) {
+    const e = wordFreqs.get(w);
+    if (e) e.freq++;
+    else wordFreqs.set(w, { syms: [...w], freq: 1 });
+  }
+
+  const merges = [];
+  for (let rank = 0; rank < maxMerges; rank++) {
+    const counts = pairCounts(wordFreqs);
+    if (!counts.size) break;
+    let best = null, bestN = 1;
+    for (const [p, n] of counts) if (n > bestN) { best = p; bestN = n; }
+    if (!best) break;                       // nothing repeats any more
+    const [a, b] = best.split("\u0000");
+    merges.push({ a, b, token: a + b, count: bestN, rank });
+    for (const entry of wordFreqs.values()) entry.syms = mergeWord(entry.syms, a, b);
+  }
+  return merges;
+}
+
+/** Apply the first `n` merges to one word, always taking the earliest-learned
+ *  applicable pair — merge order is the model. */
+function bpeWord(word, rankOf, n) {
+  let syms = [...word];
+  while (syms.length > 1) {
+    let bestRank = Infinity, bestI = -1;
+    for (let i = 0; i < syms.length - 1; i++) {
+      const r = rankOf.get(syms[i] + "\u0000" + syms[i + 1]);
+      if (r !== undefined && r < n && r < bestRank) { bestRank = r; bestI = i; }
+    }
+    if (bestI < 0) break;
+    syms = [
+      ...syms.slice(0, bestI),
+      syms[bestI] + syms[bestI + 1],
+      ...syms.slice(bestI + 2),
+    ];
+  }
+  return syms;
+}
+
+function tokenize(text, rankOf, n) {
+  return (text.match(PAT) || []).flatMap((w) => bpeWord(w, rankOf, n));
+}
+
+// ===========================================================================
+// State
+// ===========================================================================
+
+const MAX_MERGES = 400;
+let ALL_MERGES = [];
+let RANK_OF = new Map();
+let TRAINING_CORPUS = CORPUS;
+
+function retrain(text) {
+  const t0 = performance.now();
+  TRAINING_CORPUS = text;
+  ALL_MERGES = trainBPE(text, MAX_MERGES);
+  RANK_OF = new Map(ALL_MERGES.map((m) => [m.a + "\u0000" + m.b, m.rank]));
+  const ms = performance.now() - t0;
+  const slider = document.getElementById("merges");
+  slider.max = String(Math.max(ALL_MERGES.length, 1));
+  slider.value = String(Math.min(parseInt(slider.value, 10), ALL_MERGES.length));
+  document.getElementById("merges-val").textContent = slider.value;
+  document.getElementById("train-status").textContent =
+    `learned ${ALL_MERGES.length} merges in ${ms.toFixed(0)} ms`;
+}
+
+function nMerges() {
+  return Math.min(parseInt(document.getElementById("merges").value, 10), ALL_MERGES.length);
+}
+
+// ===========================================================================
+// Render
+// ===========================================================================
+
+function renderTokens() {
+  const text = document.getElementById("text").value;
+  const n = nMerges();
+  const toks = tokenize(text, RANK_OF, n);
+
+  const box = document.createElement("div");
+  box.style.cssText = "display:flex;flex-wrap:wrap;gap:5px;align-items:center";
+
+  toks.forEach((t, i) => {
+    const el = document.createElement("span");
+    // Depth = how many characters got fused, as a fraction of the longest token.
+    const depth = Math.min((t.length - 1) / 5, 1);
+    el.textContent = t.replace(/ /g, "␣");
+    el.style.cssText =
+      `font-family:var(--mono);font-size:13px;padding:6px 9px;border-radius:5px;` +
+      `background:${Viz.seq(depth * 0.85)};color:${Viz.inkOn(depth * 0.85)};` +
+      `border:1px solid var(--border);cursor:default;white-space:pre`;
+    el.addEventListener("mouseenter", (e) =>
+      UI.tip(e, `token ${i}\n${JSON.stringify(t)}\n${t.length} chars`));
+    el.addEventListener("mousemove", (e) =>
+      UI.tip(e, `token ${i}\n${JSON.stringify(t)}\n${t.length} chars`));
+    el.addEventListener("mouseleave", UI.tipOff);
+    box.appendChild(el);
+  });
+  document.getElementById("tokens").replaceChildren(box);
+
+  const stats = [
+    ["tokens", toks.length],
+    ["characters", text.length],
+    ["chars / token", (text.length / Math.max(toks.length, 1)).toFixed(2)],
+  ];
+  document.getElementById("stats").replaceChildren(
+    ...stats.map(([label, value]) => {
+      const d = document.createElement("div");
+      d.innerHTML =
+        `<div class="small muted" style="text-transform:uppercase;letter-spacing:.06em;` +
+        `font-size:11px;font-weight:600">${label}</div>` +
+        `<div style="font-size:28px;font-weight:600;line-height:1.25">${value}</div>`;
+      return d;
+    })
+  );
+
+  UI.legend(document.getElementById("token-legend"), [
+    { color: Viz.seq(0), label: "1 char — never merged" },
+    { color: Viz.seq(0.42), label: "3 chars" },
+    { color: Viz.seq(0.85), label: "6+ chars — a whole word or suffix" },
+  ]);
+}
+
+function renderCurve() {
+  const text = document.getElementById("text").value;
+  const sample = TRAINING_CORPUS.slice(0, 900);
+  const points = [], rows = [];
+  const stride = Math.max(1, Math.floor(ALL_MERGES.length / 24));
+  const checkpoints = [];
+  for (let n = 0; n <= ALL_MERGES.length; n += stride) checkpoints.push(n);
+  if (checkpoints.at(-1) !== ALL_MERGES.length) checkpoints.push(ALL_MERGES.length);
+
+  for (const n of checkpoints) {
+    const a = tokenize(sample, RANK_OF, n).length;
+    const b = tokenize(text, RANK_OF, n).length;
+    points.push([n, sample.length / Math.max(a, 1)]);
+    rows.push([n, a, b, (sample.length / Math.max(a, 1)).toFixed(2)]);
+  }
+
+  Viz.lineChart(document.getElementById("curve"), [
+    { name: "chars per token", color: "var(--series-1)", points },
+  ], {
+    height: 230,
+    xLabel: "merges learned",
+    yLabel: "chars per token (higher = shorter sequences)",
+    format: (v) => v.toFixed(1),
+    xTicks: points.filter((_, i) => i % 6 === 0).map((p) => [p[0], String(p[0])]),
+  });
+
+  UI.legend(document.getElementById("curve-legend"), [
+    { color: Viz.css("--series-1"), label: "compression on the training corpus" },
+  ]);
+
+  UI.table(
+    document.getElementById("curve-table"),
+    ["merges", "tokens (corpus sample)", "tokens (your text)", "chars/token"],
+    rows
+  );
+}
+
+function renderMergeLog() {
+  const n = nMerges();
+  const box = document.createElement("div");
+  box.style.cssText = "display:flex;flex-wrap:wrap;gap:5px;max-height:270px;overflow-y:auto";
+
+  ALL_MERGES.slice(0, n).forEach((m) => {
+    const el = document.createElement("span");
+    el.textContent = `${m.token.replace(/ /g, "␣")}`;
+    el.style.cssText =
+      `font-family:var(--mono);font-size:12px;padding:3px 7px;border-radius:4px;` +
+      `background:var(--raised);border:1px solid var(--border);color:var(--ink-2);white-space:pre`;
+    const label =
+      `rank ${m.rank}\n${JSON.stringify(m.a)} + ${JSON.stringify(m.b)} → ` +
+      `${JSON.stringify(m.token)}\nseen ${m.count}×`;
+    el.addEventListener("mouseenter", (e) => UI.tip(e, label));
+    el.addEventListener("mousemove", (e) => UI.tip(e, label));
+    el.addEventListener("mouseleave", UI.tipOff);
+    box.appendChild(el);
+  });
+
+  if (!n) {
+    const p = document.createElement("p");
+    p.className = "muted small";
+    p.textContent = "0 merges — every token is a single character.";
+    box.appendChild(p);
+  }
+  document.getElementById("merge-log").replaceChildren(box);
+}
+
+function renderAll() {
+  renderTokens();
+  renderCurve();
+  renderMergeLog();
+}
+
+// ===========================================================================
+
+document.getElementById("corpus").value = CORPUS;
+retrain(CORPUS);
+
+document.getElementById("text").addEventListener("input", () => {
+  renderTokens();
+  renderCurve();
+});
+document.getElementById("retrain").addEventListener("click", () => {
+  retrain(document.getElementById("corpus").value);
+  renderAll();
+});
+UI.slider("merges", renderAll, (v) => String(Math.round(v)));
+
+document.addEventListener("themechange", renderAll);
+</script>
