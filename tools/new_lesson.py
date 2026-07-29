@@ -222,7 +222,7 @@ def main() -> int:
 
     print("\nnext:")
     print("  make lab                     # write the lesson")
-    print(f"  .venv/bin/python tools/nbuild.py --run notebooks/{slug}.ipynb")
+    print(f"  conda run -n py313 python tools/nbuild.py --run notebooks/{slug}.ipynb")
     return 0
 
 

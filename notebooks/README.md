@@ -15,15 +15,15 @@ study method, planned lesson order, and the paper-reproduction contract.
 
 ## Running them
 
-Use the repo's own kernel — the system `python3` cannot install torch on this
-machine (see the note in the top-level README).
+Use the repo's own `py313` kernel — the unqualified system `python3` may point
+at an unrelated environment (see the note in the top-level README).
 
 ```bash
-make lab                                  # JupyterLab, kernel "Python 3 (learnai)"
+make lab                                  # JupyterLab, kernel "Python 3.13 (learnai)"
 make notebooks                            # execute all of them, report failures
 make notebooks-fast                       # execute all cells with tiny offline runs
 make lessons                              # verify teaching structure and clean outputs
-.venv/bin/python tools/nbuild.py --run notebooks/04_transformer/01_build_a_transformer.ipynb
+conda run -n py313 python tools/nbuild.py --run notebooks/04_transformer/01_build_a_transformer.ipynb
 ```
 
 Notebooks are committed **without outputs**: diffs stay readable, and a stale

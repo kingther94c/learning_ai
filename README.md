@@ -21,17 +21,27 @@ so.
 ## Quick start
 
 ```bash
-make setup     # native arm64 venv, torch with MPS, jupyter kernel
+make setup     # install into Conda py313 and register its Jupyter kernel
+make doctor    # show the exact Python, Torch, device, and kernel being used
 make test      # Python + JavaScript correctness tests
 make lab       # open the notebooks
 ```
 
 Then open **`interactive/index.html`** straight off disk — no server required.
 
-> **macOS note.** `make setup` builds its own `.venv` from Homebrew's arm64
-> Python rather than using your system `python3`. PyTorch dropped macOS x86_64
-> wheels, so an Intel/Rosetta conda env cannot install torch at all. Everything
-> in this repo goes through `.venv/bin/python`.
+> **This workstation's macOS setup.** The project uses the native arm64 Conda
+> environment `py313` (Python 3.13), not an in-repo `.venv`. The previous
+> `py313` was an Intel/Rosetta environment; current PyTorch does not publish a
+> compatible macOS x86_64 wheel. `make` runs commands through
+> `conda run -n py313`, so shell activation is optional and an unrelated
+> `python3` cannot be selected accidentally.
+>
+> To recreate it on Apple Silicon:
+>
+> ```bash
+> CONDA_SUBDIR=osx-arm64 conda create -n py313 python=3.13 pip -y
+> make setup
+> ```
 
 ---
 
@@ -121,6 +131,7 @@ These are enforced, not aspirational — see `tests/` and `.claude/skills/add-le
 
 ```bash
 make lesson NAME=04_transformer/03_kv_cache TITLE="KV caching"   # scaffold
+make doctor                                                       # diagnose the active environment
 make lessons                                                      # teaching-quality gate
 make check                                                        # test + lint
 make notebooks-fast                                               # offline smoke execution

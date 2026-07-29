@@ -104,7 +104,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         record(
             "warn",
             "architecture",
-            "x86_64 Python on macOS; use the repo's native arm64 .venv for PyTorch/MPS",
+            "x86_64 Python on macOS; use the repo's native arm64 Conda env `py313`",
         )
     else:
         record("ok", "architecture", platform.machine())
@@ -120,10 +120,14 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             kernels = KernelSpecManager().find_kernel_specs()
-        if "learnai" in kernels:
-            record("ok", "kernel", f"learnai -> {kernels['learnai']}")
+        if "learnai-py313" in kernels:
+            record("ok", "kernel", f"learnai-py313 -> {kernels['learnai-py313']}")
+        elif "learnai" in kernels:
+            record(
+                "warn", "kernel", "legacy `learnai` kernel found; run `make setup` to replace it"
+            )
         else:
-            record("warn", "kernel", "no 'learnai' Jupyter kernel; run `make setup`")
+            record("warn", "kernel", "no `learnai-py313` Jupyter kernel; run `make setup`")
     except ImportError:
         record("warn", "kernel", "Jupyter extras are not installed; run `make setup`")
 

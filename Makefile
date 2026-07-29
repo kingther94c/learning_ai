@@ -1,4 +1,6 @@
-PY := .venv/bin/python
+CONDA ?= conda
+CONDA_ENV ?= py313
+PY ?= $(CONDA) run --no-capture-output -n $(CONDA_ENV) python
 PORT ?= 8000
 
 .DEFAULT_GOAL := help
@@ -9,17 +11,20 @@ help:  ## show this help
 
 # --------------------------------------------------------------------------- setup
 
-setup:  ## create .venv (native arm64), install deps, register the jupyter kernel
-	@command -v python3.12 >/dev/null 2>&1 \
-		&& PYBIN=python3.12 \
-		|| PYBIN=python3; \
-	echo "using $$PYBIN"; \
-	$$PYBIN -m venv .venv
-	$(PY) -m pip install -q --upgrade pip
-	$(PY) -m pip install -q -e ".[notebooks,dev]"
-	$(PY) -m ipykernel install --sys-prefix --name learnai --display-name "Python 3 (learnai)"
+setup:  ## install into the native arm64 Conda py313 env and register its kernel
+	@command -v $(CONDA) >/dev/null 2>&1 || { \
+		echo "conda is required; see README.md#quick-start"; \
+		exit 1; \
+	}
+	@$(PY) -c "import platform, sys; \
+		assert sys.version_info[:2] == (3, 13), f'expected Python 3.13, got {platform.python_version()}'; \
+		assert sys.platform != 'darwin' or platform.machine() == 'arm64', \
+		f'expected native arm64 Python on macOS, got {platform.machine()}'"
+	$(PY) -m pip install --upgrade pip
+	$(PY) -m pip install -e ".[notebooks,dev]"
+	$(PY) -m ipykernel install --sys-prefix --name learnai-py313 --display-name "Python 3.13 (learnai)"
 	@echo
-	@$(PY) -c "import torch; print('torch', torch.__version__, '| mps', torch.backends.mps.is_available())"
+	@$(PY) -m learnai.cli doctor
 	@echo "\nready.  'make lab' to open the notebooks, 'make serve' for the interactive pages."
 
 # --------------------------------------------------------------------------- run
@@ -29,13 +34,16 @@ lab:  ## open JupyterLab on the notebooks
 
 serve:  ## serve interactive/ over http (only needed for cross-page links; file:// works too)
 	@echo "http://localhost:$(PORT)/"
-	@cd interactive && ../$(PY) -m http.server $(PORT)
+	@cd interactive && $(PY) -m http.server $(PORT)
 
 data:  ## retrain the reference GPT and regenerate the interactive pages' data
 	$(PY) tools/build_data.py
 
 lesson:  ## scaffold a new lesson:  make lesson NAME=03_nlp/02_embeddings TITLE="Word vectors"
 	$(PY) tools/new_lesson.py "$(NAME)" --title "$(TITLE)"
+
+doctor:  ## diagnose Python, dependencies, device, and Jupyter kernel
+	$(PY) -m learnai.cli doctor
 
 # --------------------------------------------------------------------------- check
 
@@ -67,4 +75,4 @@ clean:  ## remove caches and downloaded data (all regenerable)
 	rm -rf data/cache runs
 	find . -name '.ipynb_checkpoints' -type d -prune -exec rm -rf {} +
 
-.PHONY: help setup lab serve data lesson test lessons notebooks notebooks-fast lint fix check clean
+.PHONY: help setup lab serve data lesson doctor test lessons notebooks notebooks-fast lint fix check clean

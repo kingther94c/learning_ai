@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import textwrap
 from pathlib import Path
@@ -148,14 +149,22 @@ def resolve_kernel() -> str:
 
     Committed notebooks declare the generic `python3` kernel so they open
     anywhere. But `python3` is whatever the user registered globally — on a
-    machine with several conda envs it is very likely the wrong one. If this
-    repo's venv registered a `learnai` kernel, prefer it.
+    machine with several conda envs it is very likely the wrong one. Prefer this
+    repo's Python 3.13 kernel, while retaining the old kernel name as a fallback.
+    `LEARNAI_KERNEL` can override auto-detection in CI or a custom installation.
     """
+    requested = os.environ.get("LEARNAI_KERNEL")
+    if requested:
+        return requested
+
     try:
         from jupyter_client.kernelspec import KernelSpecManager
 
         specs = KernelSpecManager().find_kernel_specs()
-        return "learnai" if "learnai" in specs else "python3"
+        for name in ("learnai-py313", "learnai", "python3"):
+            if name in specs:
+                return name
+        return "python3"
     except ImportError:
         return "python3"
 

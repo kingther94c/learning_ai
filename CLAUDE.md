@@ -6,25 +6,29 @@ the teaching artifact**, not an implementation detail behind one.
 
 ## The environment (important)
 
-The system `python3` is an **x86_64 conda env under Rosetta**, and PyTorch no
-longer ships macOS x86_64 wheels — `pip install torch` there fails with
-"no matching distribution". This repo therefore uses its own native arm64 venv:
+The repo uses the native arm64 Conda environment `py313`:
 
 ```
-.venv/bin/python        # Homebrew python3.12, arm64, torch + MPS
+conda run --no-capture-output -n py313 python
+# /Users/kelvin/opt/anaconda3/envs/py313/bin/python
+# Python 3.13, arm64, PyTorch
 ```
 
-Always use `.venv/bin/python` or a `make` target. Never `python3`.
+The previous env with the same name was **x86_64 under Rosetta**, and current
+PyTorch has no compatible macOS x86_64 wheel. It was rebuilt as arm64. Always
+use a `make` target or `conda run -n py313 python`; never rely on an unqualified
+`python3` or on whatever environment the shell happens to have activated.
 
 The user's global `python3` Jupyter kernel points at an unrelated conda env, so
-this repo registers its own kernel named `learnai` inside `.venv`
+this repo registers its own kernel named `learnai-py313` inside the Conda env
 (`tools/nbuild.py` finds it automatically). Do not touch their user-level
 kernelspecs.
 
 ## Commands
 
 ```
-make setup       create .venv, install, register the kernel
+make setup       install into py313, validate arm64, register the kernel
+make doctor      report Python/Torch/device/kernel and check the environment
 make test        pytest + the JS suite            (fast — run this often)
 make notebooks   execute every notebook top to bottom   (slow, ~3 min)
 make notebooks-fast  execute all cells with tiny offline training runs
