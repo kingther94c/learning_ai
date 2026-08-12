@@ -55,6 +55,7 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 | `nn/attention.py` | scaled dot-product, multi-head, cross-attention, causal and padding masks, attention entropy |
 | `nn/pos_encoding.py` | sinusoidal, learned, **RoPE**, **ALiBi** |
 | `nn/blocks.py` | `FeedForward`, `SwiGLU`, `TransformerBlock` (pre- and post-norm) |
+| `nn/bert.py` | a faithful compact BERT encoder: three embeddings, post-norm bidirectional blocks, tied MLM and NSP heads |
 | `nn/gpt.py` | a complete GPT in ~200 annotated lines, with temperature / top-k / top-p sampling |
 | `data/tokenizers.py` | character, word, and a **BPE trained from scratch** — merges, ranks, the lot |
 | `data/toy.py` | copy, reverse, sort, **induction**, parity; spirals and XOR for classic ML |
@@ -68,6 +69,7 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 | | |
 |---|---|
 | `04_transformer/01_build_a_transformer.ipynb` | **Start here.** Sixteen steps from raw text to a trained GPT. 6 tokens and 4 dimensions at first, so every tensor is printable. Ends by training on Shakespeare and reading the attention maps out of the model you just trained. |
+| `04_transformer/02_build_a_bert.ipynb` | **Then compare BERT.** Rebuild the bidirectional encoder, distinguish three kinds of “mask”, measure the 15% → 80/10/10 MLM recipe, add NSP, pre-train a TinyBERT offline, and visualise the original paper's ablations. |
 
 The directory skeleton (`01_ml_foundations` → `06_frontier`) is laid out for the
 curriculum; those lessons are not written yet. The

@@ -36,6 +36,12 @@ Start with
 It intentionally bridges stages 3–5; afterwards, fill earlier gaps or continue
 into GPT depending on which part felt least solid.
 
+Then use
+[`04_transformer/02_build_a_bert.ipynb`](../notebooks/04_transformer/02_build_a_bert.ipynb)
+as the controlled comparison: remove GPT's causal mask, corrupt targets with
+masked language modelling, and see how one encoder serves token- and
+sequence-level understanding tasks.
+
 ## Planned lesson sequence
 
 The next useful lessons are ordered by dependency, not hype:
@@ -62,6 +68,9 @@ following anchors give each later lesson a concrete source:
 
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) — scaled
   dot-product attention, multi-head attention and the encoder/decoder design.
+- [BERT](https://aclanthology.org/N19-1423/) — deep bidirectional encoder
+  pre-training, masked language modelling, sentence-pair inputs and minimal
+  task-specific fine-tuning heads.
 - [In-context Learning and Induction Heads](https://arxiv.org/abs/2209.11895) —
   a falsifiable mechanistic account that can be tested in a small model.
 - [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556)

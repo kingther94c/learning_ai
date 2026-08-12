@@ -9,7 +9,7 @@ study method, planned lesson order, and the paper-reproduction contract.
 | `01_ml_foundations/` | linear models, trees, the bias-variance picture, decision boundaries you can see | planned |
 | `02_deep_learning/` | backprop by hand, initialisation, normalisation, optimisers | planned |
 | `03_nlp/` | tokenization, embeddings, word analogies, the pre-transformer baseline | planned |
-| `04_transformer/` | **`01_build_a_transformer.ipynb`** — raw text to a trained GPT in 16 steps | written |
+| `04_transformer/` | **`01_build_a_transformer.ipynb`** — raw text to a trained GPT; **`02_build_a_bert.ipynb`** — bidirectional encoder, MLM/NSP, and paper ablations | written |
 | `05_gpt/` | KV caching, sampling, scaling laws, what "in-context learning" actually is | planned |
 | `06_frontier/` | Mixture of Experts, state-space models, RLHF/DPO, paper reproductions | planned |
 
