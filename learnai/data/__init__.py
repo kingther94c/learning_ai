@@ -9,6 +9,15 @@ from learnai.data.bert import (  # noqa: F401
     make_nsp_examples,
     mask_for_mlm,
 )
+from learnai.data.gpt_tasks import (  # noqa: F401
+    ARROW_TOKEN_ID,
+    BOS_TOKEN_ID,
+    IGNORE_INDEX,
+    NUMBER_TOKEN_OFFSET,
+    SEPARATOR_TOKEN_ID,
+    make_modular_shift_batch,
+    modular_shift_accuracy,
+)
 from learnai.data.text import (  # noqa: F401
     download,
     get_batch,
@@ -28,10 +37,15 @@ from learnai.data.toy import (  # noqa: F401
 
 __all__ = [
     "BPETokenizer",
+    "ARROW_TOKEN_ID",
     "BERTInput",
+    "BOS_TOKEN_ID",
     "CharTokenizer",
     "MLMCorruption",
+    "IGNORE_INDEX",
     "NSPExample",
+    "NUMBER_TOKEN_OFFSET",
+    "SEPARATOR_TOKEN_ID",
     "ToyBERTTokenizer",
     "WordTokenizer",
     "copy_task",
@@ -42,7 +56,9 @@ __all__ = [
     "make_spirals",
     "make_xor",
     "make_nsp_examples",
+    "make_modular_shift_batch",
     "mask_for_mlm",
+    "modular_shift_accuracy",
     "parity_task",
     "reverse_task",
     "sort_task",

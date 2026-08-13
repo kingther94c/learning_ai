@@ -39,6 +39,13 @@ from learnai.nn.functional import (  # noqa: F401
     softmax,
 )
 from learnai.nn.gpt import GPT, GPTConfig  # noqa: F401
+from learnai.nn.gpt_papers import (  # noqa: F401
+    GPTSequenceClassifier,
+    GPTTransferOutput,
+    continuation_logprob,
+    joint_transfer_loss,
+    rank_completions,
+)
 from learnai.nn.lora import (  # noqa: F401
     LoRALinear,
     low_rank_approximation,
@@ -72,6 +79,8 @@ __all__ = [
     "FeedForward",
     "GPT",
     "GPTConfig",
+    "GPTSequenceClassifier",
+    "GPTTransferOutput",
     "LearnedPE",
     "LoRALinear",
     "MultiHeadAttention",
@@ -86,9 +95,11 @@ __all__ = [
     "attention_entropy",
     "causal_mask",
     "cross_entropy",
+    "continuation_logprob",
     "dropout",
     "gelu",
     "layer_norm",
+    "joint_transfer_loss",
     "low_rank_approximation",
     "log_softmax",
     "padding_mask",
@@ -96,6 +107,7 @@ __all__ = [
     "relu",
     "rms_norm",
     "relative_frobenius_error",
+    "rank_completions",
     "sample_negative_ids",
     "scaled_dot_product_attention",
     "silu",

@@ -10,7 +10,7 @@ study method, planned lesson order, and the paper-reproduction contract.
 | `02_deep_learning/` | **`01_resnet.ipynb`** — degradation, residual mappings, identity shortcuts, gradient paths, and the basic image block | written; more planned |
 | `03_nlp/` | **`01_word2vec.ipynb`** — Skip-gram, negative sampling, the 3/4 noise distribution, embedding geometry, and analogies | written; more planned |
 | `04_transformer/` | **`01_build_a_transformer.ipynb`** — raw text to a trained GPT; **`02_build_a_bert.ipynb`** — bidirectional encoder, MLM/NSP, and paper ablations | written |
-| `05_gpt/` | KV caching, sampling, scaling laws, what "in-context learning" actually is | planned |
+| `05_gpt/` | **`01_gpt1_pretraining.ipynb`** — generative pre-training and supervised transfer; **`02_gpt2_zero_shot.ipynb`** — task formatting and frozen continuation scoring; **`03_gpt3_in_context_learning.ipynb`** — zero/one/few-shot, parameter invariance, associative recall and wrong-demo ablation | written; sampling, caching and scaling planned |
 | `06_frontier/` | **`01_lora.ipynb`** — low-rank updates, rank/expressivity, parameter budgets, adapter checkpoints, and merged inference | written; more planned |
 
 ## Running them
@@ -32,7 +32,7 @@ output is worse than none. `--run` verifies without writing anything back.
 ## Adding one
 
 ```bash
-make lesson NAME=05_gpt/01_kv_cache TITLE="KV caching"
+make lesson NAME=05_gpt/04_sampling TITLE="Sampling from logits"
 ```
 
 Conventions live in `.claude/skills/add-lesson/SKILL.md` — worth reading even if

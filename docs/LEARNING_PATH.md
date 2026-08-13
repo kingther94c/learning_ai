@@ -42,6 +42,17 @@ as the controlled comparison: remove GPT's causal mask, corrupt targets with
 masked language modelling, and see how one encoder serves token- and
 sequence-level understanding tasks.
 
+Continue through the three GPT papers as one change in learning protocol, not
+three unrelated model names:
+
+1. [`05_gpt/01_gpt1_pretraining.ipynb`](../notebooks/05_gpt/01_gpt1_pretraining.ipynb) —
+   next-token pre-training followed by supervised fine-tuning and a minimal task head.
+2. [`05_gpt/02_gpt2_zero_shot.ipynb`](../notebooks/05_gpt/02_gpt2_zero_shot.ipynb) —
+   freeze the LM and express downstream tasks as text/completion probabilities.
+3. [`05_gpt/03_gpt3_in_context_learning.ipynb`](../notebooks/05_gpt/03_gpt3_in_context_learning.ipynb) —
+   put demonstrations in the prompt, prove inference changes without parameter updates,
+   and distinguish the paper's strict zero/one/few-shot definitions.
+
 Three classic-paper microscopes can be studied independently or in historical order:
 
 1. [`03_nlp/01_word2vec.ipynb`](../notebooks/03_nlp/01_word2vec.ipynb) — learn a
@@ -57,9 +68,9 @@ The next useful lessons are ordered by dependency, not hype:
 
 1. `03_nlp/02_tokenization` — character, word and BPE tokenisation from scratch.
 2. `02_deep_learning/02_backprop` — a scalar autograd engine and gradient checks.
-3. `05_gpt/01_sampling` — temperature, top-k and top-p from raw logits.
-4. `05_gpt/02_kv_cache` — prove equivalence, then measure the complexity change.
-5. `05_gpt/03_induction_heads` — train a two-layer attention model on the
+3. `05_gpt/04_sampling` — temperature, top-k and top-p from raw logits.
+4. `05_gpt/05_kv_cache` — prove equivalence, then measure the complexity change.
+5. `05_gpt/06_induction_heads` — train a two-layer attention model on the
    `[A][B] … [A] → [B]` task and intervene on the responsible head.
 6. `06_frontier/02_moe` — top-k routing, capacity, load balancing and expert
    collapse on a toy mixture.
@@ -84,9 +95,18 @@ following anchors give each later lesson a concrete source:
   identity shortcuts.
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) — scaled
   dot-product attention, multi-head attention and the encoder/decoder design.
+- [Improving Language Understanding by Generative Pre-Training](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf)
+  — pre-train a causal Transformer on unlabelled text, then fine-tune it through
+  task-aware token transformations and a minimal output head.
 - [BERT](https://aclanthology.org/N19-1423/) — deep bidirectional encoder
   pre-training, masked language modelling, sentence-pair inputs and minimal
   task-specific fine-tuning heads.
+- [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language-models.pdf)
+  — scale a next-token model on diverse web text and invoke task behaviour through
+  textual formats without downstream parameter updates.
+- [Language Models are Few-Shot Learners](https://arxiv.org/abs/2005.14165) —
+  separate zero-, one- and few-shot prompting from fine-tuning, and measure how
+  in-context behaviour changes with demonstrations and model scale.
 - [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
   — freeze a pretrained matrix, learn `ΔW=BA`, and merge the update for deployment.
 - [In-context Learning and Induction Heads](https://arxiv.org/abs/2209.11895) —

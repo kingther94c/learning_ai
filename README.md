@@ -57,11 +57,13 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 | `nn/blocks.py` | `FeedForward`, `SwiGLU`, `TransformerBlock` (pre- and post-norm) |
 | `nn/bert.py` | a faithful compact BERT encoder: three embeddings, post-norm bidirectional blocks, tied MLM and NSP heads |
 | `nn/gpt.py` | a complete GPT in ~200 annotated lines, with temperature / top-k / top-p sampling |
+| `nn/gpt_papers.py` | GPT-1's transfer head and joint objective; GPT-2-style continuation scoring and candidate ranking |
 | `nn/word2vec.py` | Skip-gram pair construction, the 3/4-power noise distribution, and negative-sampling loss |
 | `nn/resnet.py` | residual linear microscopes, the original two-convolution basic block, and a small-image ResNet |
 | `nn/lora.py` | frozen linear weights plus trainable low-rank updates, SVD diagnostics, adapter-only state, and merge/unmerge |
 | `data/tokenizers.py` | character, word, and a **BPE trained from scratch** — merges, ranks, the lot |
 | `data/toy.py` | copy, reverse, sort, **induction**, parity; spirals and XOR for classic ML |
+| `data/gpt_tasks.py` | reproducible modular-shift episodes and an inference-only in-context-learning evaluator |
 | `train/trainer.py` | a compact, readable training loop. No Lightning. Cosine schedule, grad clipping, the AdamW parameter split |
 | `interp/hooks.py` | `capture_attention`, `ActivationRecorder`, `ablate`, `patch` — the tools for causal claims, not just correlational ones |
 | `viz/` | matplotlib helpers on a shared palette |
@@ -73,6 +75,9 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 |---|---|
 | `04_transformer/01_build_a_transformer.ipynb` | **Start here.** Sixteen steps from raw text to a trained GPT. 6 tokens and 4 dimensions at first, so every tensor is printable. Ends by training on Shakespeare and reading the attention maps out of the model you just trained. |
 | `04_transformer/02_build_a_bert.ipynb` | **Then compare BERT.** Rebuild the bidirectional encoder, distinguish three kinds of “mask”, measure the 15% → 80/10/10 MLM recipe, add NSP, pre-train a TinyBERT offline, and visualise the original paper's ablations. |
+| `05_gpt/01_gpt1_pretraining.ipynb` | **Follow the first GPT transfer recipe.** Pre-train on unlabelled text, attach one last-token classifier, then compare scratch, frozen, fine-tuned and auxiliary-LM conditions. |
+| `05_gpt/02_gpt2_zero_shot.ipynb` | **Turn a task into text.** Derive continuation scoring token by token, rank candidates with frozen weights, and ablate the task format without rewriting history about GPT-2's prompts. |
+| `05_gpt/03_gpt3_in_context_learning.ipynb` | **Move learning into the context.** Separate zero/one/few-shot from fine-tuning, prove parameters stay unchanged, and break a tiny associative-recall model with shuffled demonstrations. |
 | `03_nlp/01_word2vec.ipynb` | **Learn where embeddings came from.** Turn context windows into Skip-gram pairs, derive negative sampling, train semantic geometry, and test vector analogies on a controlled corpus. |
 | `02_deep_learning/01_resnet.ipynb` | **See why shortcuts matter.** Separate the paper's degradation result from overfitting, derive `F(x)+x`, inspect gradient paths, and build the original basic residual block. |
 | `06_frontier/01_lora.ipynb` | **Adapt without copying the model.** Learn `ΔW=BA`, sweep rank against a known low-rank task, measure the parameter/checkpoint budget, and prove merged inference is equivalent. |
@@ -138,7 +143,7 @@ These are enforced, not aspirational — see `tests/` and `.claude/skills/add-le
 ## Working on it
 
 ```bash
-make lesson NAME=04_transformer/03_kv_cache TITLE="KV caching"   # scaffold
+make lesson NAME=05_gpt/04_sampling TITLE="Sampling from logits" # scaffold
 make doctor                                                       # diagnose the active environment
 make lessons                                                      # teaching-quality gate
 make check                                                        # test + lint
@@ -159,16 +164,17 @@ traps, and
 
 Planned, in rough order of what earns its place next:
 
-- **`05_gpt/`** — KV caching (the `generate` here is deliberately O(T²)), sampling,
-  scaling laws
+- **`05_gpt/`** — sampling, KV caching (the `generate` here is deliberately O(T²)),
+  induction-head interventions and scaling laws after the written GPT-1/2/3 trilogy
 - **`03_nlp/`** — tokenization and recurrent sequence models around the written Word2Vec lesson
 - **`02_deep_learning/`** — backprop by hand, initialisation, normalisation and optimisers around the written ResNet lesson
 - **`01_ml_foundations/`** — the classic models, with decision boundaries you can see
 - **`06_frontier/`** — Mixture of Experts, state-space models and RLHF/DPO after the written LoRA reproduction
 
 The written paper path now spans *Word2Vec* (2013), *Deep Residual Learning*
-(2015), *Attention Is All You Need* (2017), *BERT* (2018), and *LoRA* (2021),
-before moving to induction heads, scaling, sparse routing, selective state-space
-models, preference optimisation and reasoning RL. See the
+(2015), *Attention Is All You Need* (2017), *GPT-1* (2018), *BERT* (2018),
+*GPT-2* (2019), *GPT-3* (2020), and *LoRA* (2021), before moving to induction
+heads, scaling, sparse routing, selective state-space models, preference
+optimisation and reasoning RL. See the
 [`paper ladder`](docs/LEARNING_PATH.md#paper-ladder) for primary sources and the
 reproduction contract.

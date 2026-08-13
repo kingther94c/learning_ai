@@ -132,7 +132,40 @@ class GPT(nn.Module):
         modelling scales: one sequence of length T yields T training signals, and
         the causal mask is what makes it legal.
         """
-        B, T = idx.shape
+        x = self.encode(idx)
+        logits = self.lm_head(x)  # (B, T, vocab)
+
+        loss = None
+        if targets is not None:
+            if targets.shape != idx.shape:
+                raise ValueError(
+                    f"targets must have shape {tuple(idx.shape)}, got {tuple(targets.shape)}"
+                )
+            loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.reshape(-1))
+        return logits, loss
+
+    def encode(self, idx: torch.Tensor) -> torch.Tensor:
+        """Return the final hidden state before unembedding.
+
+        GPT-1 reused this representation for supervised transfer by attaching a
+        small task head to the last token.  Keeping the operation public also
+        lets lessons inspect the residual stream without a forward hook.
+
+        Args:
+            idx: Integer token ids with shape ``(batch, time)``.
+
+        Returns:
+            Final layer-normalised hidden states with shape
+            ``(batch, time, d_model)``.
+        """
+        if idx.ndim != 2:
+            raise ValueError(f"idx must have shape (B, T), got {tuple(idx.shape)}")
+        if idx.dtype not in (torch.int32, torch.int64):
+            raise TypeError(f"idx must contain integer token ids, got {idx.dtype}")
+
+        _, T = idx.shape
+        if T == 0:
+            raise ValueError("idx must contain at least one token")
         if T > self.config.block_size:
             raise ValueError(f"sequence length {T} exceeds block_size {self.config.block_size}")
 
@@ -143,13 +176,7 @@ class GPT(nn.Module):
         for block in self.blocks:
             x = block(x)  # (B, T, D) each block adds its contribution
 
-        x = self.ln_f(x)  # (B, T, D)
-        logits = self.lm_head(x)  # (B, T, vocab)
-
-        loss = None
-        if targets is not None:
-            loss = cross_entropy(logits.view(-1, logits.size(-1)), targets.reshape(-1))
-        return logits, loss
+        return self.ln_f(x)  # (B, T, D)
 
     @torch.no_grad()
     def generate(
