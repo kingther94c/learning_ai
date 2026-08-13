@@ -42,23 +42,32 @@ as the controlled comparison: remove GPT's causal mask, corrupt targets with
 masked language modelling, and see how one encoder serves token- and
 sequence-level understanding tasks.
 
+Three classic-paper microscopes can be studied independently or in historical order:
+
+1. [`03_nlp/01_word2vec.ipynb`](../notebooks/03_nlp/01_word2vec.ipynb) — learn a
+   static vector from local context before asking Transformers for contextual vectors.
+2. [`02_deep_learning/01_resnet.ipynb`](../notebooks/02_deep_learning/01_resnet.ipynb) —
+   understand the identity shortcut that later Transformer blocks inherit.
+3. [`06_frontier/01_lora.ipynb`](../notebooks/06_frontier/01_lora.ipynb) — freeze a
+   pretrained matrix and adapt it through a low-rank update.
+
 ## Planned lesson sequence
 
 The next useful lessons are ordered by dependency, not hype:
 
-1. `03_nlp/01_tokenization` — character, word and BPE tokenisation from scratch.
-2. `02_deep_learning/01_backprop` — a scalar autograd engine and gradient checks.
+1. `03_nlp/02_tokenization` — character, word and BPE tokenisation from scratch.
+2. `02_deep_learning/02_backprop` — a scalar autograd engine and gradient checks.
 3. `05_gpt/01_sampling` — temperature, top-k and top-p from raw logits.
 4. `05_gpt/02_kv_cache` — prove equivalence, then measure the complexity change.
 5. `05_gpt/03_induction_heads` — train a two-layer attention model on the
    `[A][B] … [A] → [B]` task and intervene on the responsible head.
-6. `06_frontier/01_moe` — top-k routing, capacity, load balancing and expert
+6. `06_frontier/02_moe` — top-k routing, capacity, load balancing and expert
    collapse on a toy mixture.
-7. `06_frontier/02_selective_ssm` — scan versus attention on selective-copy and
+7. `06_frontier/03_selective_ssm` — scan versus attention on selective-copy and
    long-memory tasks.
-8. `06_frontier/03_dpo` — derive and implement the preference loss on a tiny
+8. `06_frontier/04_dpo` — derive and implement the preference loss on a tiny
    discrete policy.
-9. `06_frontier/04_reasoning_rl` — separate verifiable reward, exploration and
+9. `06_frontier/05_reasoning_rl` — separate verifiable reward, exploration and
    inference-time sampling in a small arithmetic environment.
 
 ## Paper ladder
@@ -66,11 +75,20 @@ The next useful lessons are ordered by dependency, not hype:
 Use papers as specifications for experiments, not as reading trophies. The
 following anchors give each later lesson a concrete source:
 
+- [Efficient Estimation of Word Representations in Vector Space](https://arxiv.org/abs/1301.3781)
+  and [Distributed Representations of Words and Phrases and their Compositionality](https://papers.nips.cc/paper/5021-distributed-representations-of-words-and-phrases-and-their-compositionality)
+  — the Skip-gram architecture, then negative sampling, frequent-word subsampling,
+  the 3/4-power noise distribution, and linear embedding structure.
+- [Deep Residual Learning for Image Recognition](https://arxiv.org/abs/1512.03385) —
+  degradation in deep plain networks, residual reparameterisation, and economical
+  identity shortcuts.
 - [Attention Is All You Need](https://arxiv.org/abs/1706.03762) — scaled
   dot-product attention, multi-head attention and the encoder/decoder design.
 - [BERT](https://aclanthology.org/N19-1423/) — deep bidirectional encoder
   pre-training, masked language modelling, sentence-pair inputs and minimal
   task-specific fine-tuning heads.
+- [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
+  — freeze a pretrained matrix, learn `ΔW=BA`, and merge the update for deployment.
 - [In-context Learning and Induction Heads](https://arxiv.org/abs/2209.11895) —
   a falsifiable mechanistic account that can be tested in a small model.
 - [Training Compute-Optimal Large Language Models](https://arxiv.org/abs/2203.15556)

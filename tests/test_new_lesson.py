@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from tools.new_lesson import validate_slug
+import tools.nbuild as nbuild
+from tools.check_lessons import check_notebook
+from tools.new_lesson import build_notebook, validate_slug
 
 
 @pytest.mark.parametrize(
@@ -35,3 +37,9 @@ def test_page_slugs_are_single_safe_directory_names(slug):
 def test_page_slugs_reject_traversal_and_nested_paths(slug):
     with pytest.raises(ValueError, match="invalid page slug"):
         validate_slug(slug, page=True)
+
+
+def test_new_notebook_scaffold_passes_the_lesson_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(nbuild, "REPO_ROOT", tmp_path)
+    path = build_notebook("03_nlp/99_example", "Example", page=None)
+    assert check_notebook(path) == []

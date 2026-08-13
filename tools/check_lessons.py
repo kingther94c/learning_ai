@@ -22,6 +22,7 @@ from tools.nbuild import REPO_ROOT
 
 _SECTION = re.compile(r"(?m)^##\s+\d+\.\s+\S")
 _ASSERT = re.compile(r"(?m)^\s*assert\b")
+_CONTROL_CHARACTER = re.compile(r"[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]")
 _REMOTE_ASSET = re.compile(
     r"""<(?:script|link)\b[^>]*(?:src|href)=["']https?://""",
     re.IGNORECASE,
@@ -54,6 +55,11 @@ def check_notebook(path: Path) -> list[str]:
     markdown = "\n".join(_source(cell) for cell in cells if cell.get("cell_type") == "markdown")
     code = "\n".join(_source(cell) for cell in cells if cell.get("cell_type") == "code")
 
+    if _CONTROL_CHARACTER.search(markdown):
+        problems.append(
+            f"{rel}: markdown contains an ASCII control character "
+            "(likely an unescaped LaTeX backslash in its generator)"
+        )
     if len(_SECTION.findall(markdown)) < 2:
         problems.append(f"{rel}: use numbered sections (`## N. title`)")
     if markdown.count("> **Your turn.**") < 2:

@@ -52,3 +52,26 @@ def test_notebook_checker_catches_a_demo_with_no_practice(tmp_path):
 
     problems = check_notebook(path)
     assert any("at least two `Your turn` exercises" in problem for problem in problems)
+
+
+def test_notebook_checker_catches_latex_corrupted_by_python_escape(tmp_path):
+    path = _valid_notebook(tmp_path)
+    notebook = json.loads(path.read_text())
+    notebook["cells"][1]["source"].append("\n$$x=" + chr(12) + "rac{a}{b}$$")
+    path.write_text(json.dumps(notebook))
+
+    problems = check_notebook(path)
+    assert any("ASCII control character" in problem for problem in problems)
+
+
+def test_add_lesson_skill_tracks_the_py313_and_paper_evidence_contract():
+    skill = Path(".claude/skills/add-lesson/SKILL.md").read_text()
+    assert ".venv/bin" not in skill
+    assert "conda run --no-capture-output -n py313" in skill
+    for required in (
+        "Treat the paper as a specification",
+        "Attribute each mechanism to the right source",
+        "State one central claim and one evidence boundary",
+        "Close with the scale gap",
+    ):
+        assert required in skill

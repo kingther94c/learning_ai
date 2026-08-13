@@ -19,7 +19,7 @@ cannot be imported, tested, or reused by a page.
 3. **Scaffold** — `make lesson NAME=04_transformer/03_kv_cache TITLE="KV caching"`
    (add `--page kvcache` via `tools/new_lesson.py` if it needs an interactive page).
 4. **Write the lesson**, then **verify it runs**:
-   `.venv/bin/python tools/nbuild.py --run notebooks/<path>.ipynb`
+   `conda run --no-capture-output -n py313 python tools/nbuild.py --run notebooks/<path>.ipynb`
 5. **Add a card** to `interactive/index.html` if you made a page.
 6. Run `make lessons`, then `make check` before you are done. The first command
    checks the lesson-specific contract; the second runs the full repository gate.
@@ -41,7 +41,7 @@ cannot be imported, tested, or reused by a page.
   notebook.** A lesson that never hands over control does not stick.
 - **Never commit outputs.** `nbuild` writes cells with outputs cleared; keep it
   that way (diffs stay readable, and stale outputs are worse than none).
-- Run `.venv/bin/python tools/check_lessons.py notebooks/<path>.ipynb` while
+- Run `conda run --no-capture-output -n py313 python tools/check_lessons.py notebooks/<path>.ipynb` while
   authoring. It checks the portable kernel, stable cell IDs, numbered sections,
   executable assertions, takeaways, exercises, and output hygiene.
 - Notebooks must run in **under ~3 minutes**. If training is needed, size it for a
@@ -49,6 +49,28 @@ cannot be imported, tested, or reused by a page.
 - If training dominates runtime, read `LEARNAI_FAST` and keep that path tiny but
   structurally complete. `make notebooks-fast` must execute every cell offline;
   the default path must still produce a meaningful learning result.
+
+## Paper-reproduction conventions
+
+- **Treat the paper as a specification.** Read the primary paper and, when
+  implementation details matter, the authors' official code. Do not copy claims
+  from tutorials or silently merge details from follow-up papers.
+- **Attribute each mechanism to the right source.** If the familiar recipe spans
+  multiple papers, say so beside the relevant formula instead of assigning the
+  whole recipe to the better-known title.
+- **State one central claim and one evidence boundary.** Label an experiment as a
+  *reproduction* only when its task and metric test the same claim. Otherwise call
+  it a controlled illustration, optimisation microscope, or scale-down, and say
+  what it cannot establish.
+- **Separate paper numbers from notebook measurements.** Paper tables may be
+  transcribed into plots when labelled with the exact table/figure and source;
+  notebook results must be visibly named `toy`, `measured here`, or equivalent.
+- **Keep controlled comparisons controlled.** Fix seeds and all non-target
+  hyperparameters. Rank/depth/window sweeps that accidentally change scale,
+  parameter budget, or training data do not isolate the claimed mechanism.
+- **Close with the scale gap.** Record the paper's data/model scale, this lesson's
+  scale, the trusted baseline and metric, at least one ablation, and the strongest
+  conclusion the small experiment actually supports.
 
 ## Interactive page conventions
 

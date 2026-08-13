@@ -7,11 +7,11 @@ study method, planned lesson order, and the paper-reproduction contract.
 | directory | what it covers | status |
 |---|---|---|
 | `01_ml_foundations/` | linear models, trees, the bias-variance picture, decision boundaries you can see | planned |
-| `02_deep_learning/` | backprop by hand, initialisation, normalisation, optimisers | planned |
-| `03_nlp/` | tokenization, embeddings, word analogies, the pre-transformer baseline | planned |
+| `02_deep_learning/` | **`01_resnet.ipynb`** — degradation, residual mappings, identity shortcuts, gradient paths, and the basic image block | written; more planned |
+| `03_nlp/` | **`01_word2vec.ipynb`** — Skip-gram, negative sampling, the 3/4 noise distribution, embedding geometry, and analogies | written; more planned |
 | `04_transformer/` | **`01_build_a_transformer.ipynb`** — raw text to a trained GPT; **`02_build_a_bert.ipynb`** — bidirectional encoder, MLM/NSP, and paper ablations | written |
 | `05_gpt/` | KV caching, sampling, scaling laws, what "in-context learning" actually is | planned |
-| `06_frontier/` | Mixture of Experts, state-space models, RLHF/DPO, paper reproductions | planned |
+| `06_frontier/` | **`01_lora.ipynb`** — low-rank updates, rank/expressivity, parameter budgets, adapter checkpoints, and merged inference | written; more planned |
 
 ## Running them
 

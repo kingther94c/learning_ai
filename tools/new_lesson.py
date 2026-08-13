@@ -121,7 +121,8 @@ def build_notebook(slug: str, title: str, page: str | None) -> Path:
             "**The question this answers:** _(one sentence — if you cannot write it, "
             "the lesson is not ready)_\n\n"
             "**What you will build:** _(the concrete artifact)_\n\n"
-            "**Prerequisites:** _(be specific; 'some ML background' helps nobody)_"
+            "**Prerequisites:** _(be specific; 'some ML background' helps nobody)_\n\n"
+            "**Primary source:** _(paper/official implementation, when applicable)_"
         ),
     )
 
@@ -130,8 +131,10 @@ def build_notebook(slug: str, title: str, page: str | None) -> Path:
     ## 0. Setup
     """)
     nb.code("""
-    import torch
+    import os
+
     import matplotlib.pyplot as plt
+    import torch
 
     from learnai.env import setup
     from learnai.viz import use_style
@@ -139,6 +142,8 @@ def build_notebook(slug: str, title: str, page: str | None) -> Path:
     ctx = setup(seed=0)
     use_style()
     torch.set_printoptions(precision=3, sci_mode=False, linewidth=120)
+    FAST = os.environ.get("LEARNAI_FAST", "0") == "1"
+    print("fast smoke path:", FAST)
     """)
 
     nb.md("""
@@ -159,8 +164,10 @@ def build_notebook(slug: str, title: str, page: str | None) -> Path:
     implementation so the reader can trust it.
     """)
     nb.code("""
-    # build it
-    # then verify:  assert torch.allclose(mine, reference, atol=1e-6)
+    # Replace this tiny checked example with the real mechanism.
+    mine = torch.tensor([1.0])
+    reference = torch.ones(1)
+    assert torch.allclose(mine, reference, atol=1e-6)
     """)
 
     nb.takeaway(
@@ -174,9 +181,18 @@ def build_notebook(slug: str, title: str, page: str | None) -> Path:
         hint="Point at the specific function or argument.",
     )
 
+    nb.exercise(
+        "Design an ablation that should remove the effect. State the metric before running it.",
+        hint="Change only the proposed mechanism; keep the data, seed, budget and metric fixed.",
+    )
+
     nb.md(f"""
     ---
-    ## 3. Where to go next
+    ## 3. Evidence boundary and where to go next
+
+    - **Measured here:** _(the strongest conclusion supported by this notebook)_
+    - **Not established here:** _(the gap from the paper's data/model/metric)_
+    - **Controlled ablation:** _(what removes the effect)_
 
     - the module this lesson exercises: `learnai/...`
     {f"- the interactive page: `interactive/{page}/index.html`" if page else ""}

@@ -57,6 +57,9 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 | `nn/blocks.py` | `FeedForward`, `SwiGLU`, `TransformerBlock` (pre- and post-norm) |
 | `nn/bert.py` | a faithful compact BERT encoder: three embeddings, post-norm bidirectional blocks, tied MLM and NSP heads |
 | `nn/gpt.py` | a complete GPT in ~200 annotated lines, with temperature / top-k / top-p sampling |
+| `nn/word2vec.py` | Skip-gram pair construction, the 3/4-power noise distribution, and negative-sampling loss |
+| `nn/resnet.py` | residual linear microscopes, the original two-convolution basic block, and a small-image ResNet |
+| `nn/lora.py` | frozen linear weights plus trainable low-rank updates, SVD diagnostics, adapter-only state, and merge/unmerge |
 | `data/tokenizers.py` | character, word, and a **BPE trained from scratch** — merges, ranks, the lot |
 | `data/toy.py` | copy, reverse, sort, **induction**, parity; spirals and XOR for classic ML |
 | `train/trainer.py` | a compact, readable training loop. No Lightning. Cosine schedule, grad clipping, the AdamW parameter split |
@@ -70,9 +73,12 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 |---|---|
 | `04_transformer/01_build_a_transformer.ipynb` | **Start here.** Sixteen steps from raw text to a trained GPT. 6 tokens and 4 dimensions at first, so every tensor is printable. Ends by training on Shakespeare and reading the attention maps out of the model you just trained. |
 | `04_transformer/02_build_a_bert.ipynb` | **Then compare BERT.** Rebuild the bidirectional encoder, distinguish three kinds of “mask”, measure the 15% → 80/10/10 MLM recipe, add NSP, pre-train a TinyBERT offline, and visualise the original paper's ablations. |
+| `03_nlp/01_word2vec.ipynb` | **Learn where embeddings came from.** Turn context windows into Skip-gram pairs, derive negative sampling, train semantic geometry, and test vector analogies on a controlled corpus. |
+| `02_deep_learning/01_resnet.ipynb` | **See why shortcuts matter.** Separate the paper's degradation result from overfitting, derive `F(x)+x`, inspect gradient paths, and build the original basic residual block. |
+| `06_frontier/01_lora.ipynb` | **Adapt without copying the model.** Learn `ΔW=BA`, sweep rank against a known low-rank task, measure the parameter/checkpoint budget, and prove merged inference is equivalent. |
 
 The directory skeleton (`01_ml_foundations` → `06_frontier`) is laid out for the
-curriculum; those lessons are not written yet. The
+curriculum; the remaining stages are filled incrementally. The
 [`learning path`](docs/LEARNING_PATH.md) defines the dependency order, how to
 study each lesson, and a laptop-sized protocol for paper reproductions.
 `make lesson` scaffolds one.
@@ -155,15 +161,14 @@ Planned, in rough order of what earns its place next:
 
 - **`05_gpt/`** — KV caching (the `generate` here is deliberately O(T²)), sampling,
   scaling laws
-- **`03_nlp/`** — tokenization, embeddings, word analogies
-- **`02_deep_learning/`** — backprop by hand, initialisation, normalisation, optimisers
+- **`03_nlp/`** — tokenization and recurrent sequence models around the written Word2Vec lesson
+- **`02_deep_learning/`** — backprop by hand, initialisation, normalisation and optimisers around the written ResNet lesson
 - **`01_ml_foundations/`** — the classic models, with decision boundaries you can see
-- **`06_frontier/`** — Mixture of Experts, state-space models, RLHF/DPO, and
-  reproductions of papers worth the time
+- **`06_frontier/`** — Mixture of Experts, state-space models and RLHF/DPO after the written LoRA reproduction
 
-Papers the notebooks build toward, in reading order: *Attention Is All You Need*
-(2017), *GPT-2* (2019), *In-context Learning and Induction Heads* (2022),
-*Chinchilla* (2022), then small reproductions of MoE, selective state-space
+The written paper path now spans *Word2Vec* (2013), *Deep Residual Learning*
+(2015), *Attention Is All You Need* (2017), *BERT* (2018), and *LoRA* (2021),
+before moving to induction heads, scaling, sparse routing, selective state-space
 models, preference optimisation and reasoning RL. See the
 [`paper ladder`](docs/LEARNING_PATH.md#paper-ladder) for primary sources and the
 reproduction contract.
