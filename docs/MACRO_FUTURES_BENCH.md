@@ -279,6 +279,62 @@ smaller cap without another generation run.
 - At the same 4k budget, 4B scores 101 to DianJin's 72 (51 items gained, 22 lost,
   p < 0.001). Even at 2k, 4B is ahead.
 
+## 5. A desk playbook for 4B, measured on held-out items
+
+The errors in §4 suggest a standing brief of the kind a desk gives a new trader. The
+brief is `tools/prompts/macro_desk.txt`, 1,265 tokens, sent as the system message with
+`generate --system`. `force` reuses it. It has four parts:
+- **How to work.** The facts stated in the question are right. Check once, then answer.
+- **Quoting conventions.** These include worked conversions for the inverted FX quote and
+  for STIR basis points.
+- **First-order reactions** to policy, data and the global shocks.
+- **The desk rules** as an ordered checklist. It adds two things the rules already imply:
+  stops and rolls apply whatever the PM's line says, and a limit is computed in USD rather
+  than asserted.
+
+It was written from the screening slice's errors, so it is measured only on the held-out
+slice (`--offset 50`): 150 items that cover every template and were not looked at while
+writing it. Both runs used 4B at 16k, batch 11, with the same sampling. The brackets are
+95% Wilson intervals. *p* is the exact two-sided McNemar test on the paired items.
+
+| held-out, 150 items | no playbook | playbook | fixed / broke | *p* |
+|---|---|---|---|---|
+| as generated (16k cap) | 86 (57%) [49–65] | **127 (85%)** [78–90] | 45 / 4 | < 0.001 |
+| forced at 16k | 122 (81%) [74–87] | **137 (91%)** [86–95] | 18 / 3 | < 0.001 |
+| forced at 8k | 123 (82%) [75–87] | 126 (84%) [77–89] | 15 / 12 | 0.70 |
+| forced at 4k | 109 (73%) [65–79] | 122 (81%) [74–87] | 22 / 9 | 0.03 |
+
+- **It mostly cures the looping.**
+  - Loops: 37 → 7.
+  - Answers cut by the cap: 78 → 22.
+  - Median length: 16,384 → 7,515 tokens.
+  - Wall time: 247 → 170 minutes.
+  - Without any forcing, the playbook run (127) already beats the forced baseline (122).
+- **The targeted templates improve,** at 16k forced:
+  - rolls 1/5 → 4/5, stops 3/5 → 4/5;
+  - inverted FX 0/3 → 2/3, STIR 1/2 → 2/2, Treasury 32nds 1/2 → 2/2;
+  - policy signs 15/23 → 20/23, data signs 5/7 → 7/7.
+- **Not everything improves.**
+  - Gross-notional limits fall from 4/5 to 2/5, and fed-funds odds from 2/2 to 1/2.
+  - At 8k the gain is not significant (15 fixed, 12 broken). The playbook helps most
+    where the model would otherwise run out of budget (4k) or loop (16k).
+  - The held-out slice has only 6 global-shock items, all already right without the
+    playbook, so the risk-on and risk-off rules are not tested here.
+- **Cost.** The system message adds 1,265 tokens to every prompt. Peak memory was
+  11.76 GiB, under the 12 GiB limit. The longest prompt with the playbook is 2,206
+  tokens, inside the 2,300 the batch arithmetic assumes.
+
+**What this shows and what it does not.** The playbook states the conventions and
+procedures the templates test. The gain shows that 4B *applies* such rules reliably once
+told, and stops second-guessing itself. It does not show better macro judgment, and a
+desk's real playbook would be tested on situations it does not spell out. For an agent
+built on 4B, two conclusions follow:
+- Give it the desk's conventions and rules as a standing brief, and force the answer at a
+  cap.
+- Better still, implement the mechanical rules in code before an order leaves: stops,
+  rolls, limits, margin, stale quotes, duplicate signals. The model can then interpret the
+  PM's instruction and the news, which is the part code cannot do.
+
 ## Reproducing
 
 ```
@@ -286,6 +342,13 @@ smaller cap without another generation run.
 python tools/finance_model_select.py generate --bench macro --model dianjin-r1-7b \
     --max-tokens 4096 --batch 16
 python tools/finance_model_select.py force runs/finbench/dianjin-r1-7b/macro-n50-o0.jsonl --cap 4096
+
+# §5: the held-out slice with and without the desk playbook, forced, then paired
+python tools/finance_model_select.py generate --bench macro --offset 50 --model qwen3.5-4b \
+    --max-tokens 16384 --batch 11 --system tools/prompts/macro_desk.txt
+python tools/finance_model_select.py force runs/finbench/qwen3.5-4b/macro-n50-o50-macro_desk.jsonl --cap 16384
+python tools/finance_model_select.py compare runs/finbench/qwen3.5-4b/macro-n50-o50.force16384.jsonl \
+    runs/finbench/qwen3.5-4b/macro-n50-o50-macro_desk.force16384.jsonl
 
 # the same questions as text, for a model without a local runner, and its graded answers
 python tools/finance_model_select.py export --bench macro --out <dir>
