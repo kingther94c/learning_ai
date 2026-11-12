@@ -36,7 +36,52 @@ make lessons     validate lesson structure and offline pages
 make check       test + lint — the gate before finishing
 make data        retrain the reference GPT, regenerate interactive/*/data/
 make lesson NAME=04_transformer/03_kv_cache TITLE="KV caching"
+make llm-setup   install mlx-lm for released open-weight models (Apple silicon)
+make models      curated open-weight models: size, fits-this-Mac, downloaded?
+make chat MODEL=qwen3.5-4b   chat in the terminal (downloads on first use)
+make chat MODEL=qwen3.5-4b PATCH=runs/weightprog/qwen3.5-4b/patch.npz   ...with a weight edit applied
 ```
+
+Open-weight checkpoints (`learnai/openweights.py`) are multi-GB and never go in
+the repo: they live in `$LEARNAI_MODELS_DIR` (set per machine as a `py313` conda
+env var, e.g. on an external drive) or else the shared Hugging Face cache. Don't `make pull` large models
+unasked; `qwen3-0.6b` (0.35 GB) is the one the test suite uses, and its test is
+skipped when it is not downloaded.
+
+Run outputs and downloaded data stay out of the repo as well. On the owner's Mac,
+`runs/` and `data/cache/` are symlinks into the external drive
+(`/Volumes/Seagate Backup Plus Drive/DATA/learning_ai/`), next to the models in
+`DATA/huggingface`. Write through the links as usual. If the drive is unplugged, the
+links dangle and runs fail, rather than filling the internal disk. A fresh clone gets
+plain directories.
+
+**Run one MLX job at a time.** Two generation or probe processes sharing the GPU
+end in `[METAL] ... Insufficient Memory` or a silent `Killed: 9` on a 32 GB Mac.
+Queue long runs in one background command; do CPU work while they run.
+
+The weight-editing experiment (`docs/WEIGHT_EDITING.md`) is driven by
+`tools/weight_edit_experiment.py`; its outputs (runs, patches) go to `runs/weightprog/`
+and its benchmark problems to `data/cache/mathbench/`, both git-ignored. A benchmark
+run is 10-25 minutes of GPU; `diagnose`, `edit` and `probe` take seconds.
+
+The finance model comparison (`docs/FINANCE_MODEL_SELECTION.md`) is driven by
+`tools/finance_model_select.py` over `learnai/finbench.py`; runs go to `runs/finbench/`
+and the question sets to `data/cache/finbench/`. Its per-model batch sizes keep the
+process under 12 GiB at a 16k cap — change them only with the arithmetic in the doc.
+A screening run (150 questions) is 1-3 hours of GPU per model. `tools/finance_report.py`
+rebuilds the Chinese report (`docs/finance_model_selection_report.zh.html`) from the runs.
+The Mac restarts for macOS updates: write long queues as resumable scripts in `runs/finbench/queue/`.
+
+The global-macro futures benchmark (`docs/MACRO_FUTURES_BENCH.md`, for PM and execution
+agents) is `learnai/macrobench.py`. Its items are generated, not downloaded, and run
+through the same runner with `--bench macro`, which writes `runs/finbench/<model>/macro-*.jsonl`.
+Its sign rules (`ECONOMIES`, `POLICY`, `DATA_EXCLUDED`) and desk rules (`RULES`) are the
+answer key. Change them only together with `tests/test_macrobench.py`, and expect every
+existing macro run to be redone. `generate --system <file>` sends a standing brief as the
+system message, and `force` reuses it from the run's meta. The desk playbook
+`tools/prompts/macro_desk.txt` was written from the errors on the screening slice (`o0`),
+so measure it only on the held-out slice (`--offset 50`). Keep it, plus the longest
+prompt, under the runner's `PROMPT_MAX` tokens.
 
 ## Layout
 
@@ -45,7 +90,7 @@ make lesson NAME=04_transformer/03_kv_cache TITLE="KV caching"
 | `learnai/` | the reference implementation — readable, shape-annotated, tested |
 | `notebooks/` | build it up a cell at a time, on real data |
 | `interactive/` | self-contained HTML that computes live in the browser |
-| `tools/` | `nbuild`, `check_lessons`, `build_data`, `new_lesson` |
+| `tools/` | `nbuild`, `check_lessons`, `build_data`, `new_lesson`, `weight_edit_experiment`, `finance_model_select`, `edit_gate`, `finance_report` |
 | `tests/` | `pytest` for Python, `node tests/test_interactive_js.mjs` for JS |
 
 ## Non-obvious invariants

@@ -2,6 +2,10 @@ CONDA ?= conda
 CONDA_ENV ?= py313
 PY ?= $(CONDA) run --no-capture-output -n $(CONDA_ENV) python
 PORT ?= 8000
+MODEL ?=
+PATCH ?=
+# Use node from PATH (CI); otherwise the one installed into the Conda env.
+NODE ?= $(shell command -v node 2>/dev/null || echo $(CONDA) run --no-capture-output -n $(CONDA_ENV) node)
 
 .DEFAULT_GOAL := help
 
@@ -45,11 +49,26 @@ lesson:  ## scaffold a new lesson:  make lesson NAME=03_nlp/02_embeddings TITLE=
 doctor:  ## diagnose Python, dependencies, device, and Jupyter kernel
 	$(PY) -m learnai.cli doctor
 
+# --------------------------------------------------------------------------- open-weight models
+
+llm-setup:  ## install MLX + Hugging Face Hub to run open-weight models (Apple silicon)
+	$(PY) -m pip install -e ".[llm]"
+	@$(PY) -m learnai.cli models
+
+models:  ## list curated open-weight models, their size, and whether they fit this Mac
+	@$(PY) -m learnai.cli models
+
+pull:  ## download an open-weight model:  make pull MODEL=qwen3.8-27b
+	$(PY) -m learnai.cli pull $(MODEL)
+
+chat:  ## chat with an open-weight model:  make chat MODEL=qwen3.5-4b [PATCH=edit.npz]
+	@$(PY) -m learnai.cli chat $(MODEL) $(if $(PATCH),--patch $(PATCH))
+
 # --------------------------------------------------------------------------- check
 
 test:  ## run the python + javascript test suites
 	$(PY) -m pytest tests/ -q
-	node tests/test_interactive_js.mjs
+	$(NODE) tests/test_interactive_js.mjs
 
 lessons:  ## check notebook hygiene, teaching structure, offline pages, and navigation
 	$(PY) tools/check_lessons.py
@@ -75,4 +94,5 @@ clean:  ## remove caches and downloaded data (all regenerable)
 	rm -rf data/cache runs
 	find . -name '.ipynb_checkpoints' -type d -prune -exec rm -rf {} +
 
-.PHONY: help setup lab serve data lesson doctor test lessons notebooks notebooks-fast lint fix check clean
+.PHONY: help setup lab serve data lesson doctor llm-setup models pull chat test lessons notebooks \
+	notebooks-fast lint fix check clean

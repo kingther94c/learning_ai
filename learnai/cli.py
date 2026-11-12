@@ -5,6 +5,12 @@ two setup questions that are otherwise surprisingly time-consuming to debug:
 
     learnai info      What Python, torch, device, and repository am I using?
     learnai doctor    Can this environment execute the lessons?
+
+and runs released open-weight models (see ``learnai.openweights``):
+
+    learnai models    Which curated models fit this Mac, and which are downloaded?
+    learnai pull      Download one into the Hugging Face cache.
+    learnai chat      Talk to one in the terminal.
 """
 
 from __future__ import annotations
@@ -131,6 +137,21 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     except ImportError:
         record("warn", "kernel", "Jupyter extras are not installed; run `make setup`")
 
+    # Open-weight models are optional and Apple-silicon only (MLX).
+    if sys.platform == "darwin" and platform.machine() == "arm64":
+        if importlib.util.find_spec("mlx_lm") is None:
+            record("ok", "mlx-lm", "optional, not installed; `make llm-setup` to run open models")
+        else:
+            from learnai.openweights import MODELS, DriveNotConnected, cached_sizes
+
+            version = importlib.metadata.version("mlx-lm")
+            try:
+                have = [card.key for card in MODELS.values() if card.repo in cached_sizes()]
+                downloaded = ", ".join(have) or "none (`make pull`)"
+                record("ok", "mlx-lm", f"{version}; models downloaded: {downloaded}")
+            except DriveNotConnected as exc:
+                record("warn", "mlx-lm", f"{version}; {exc}")
+
     cached = CACHE_DIR / "tinyshakespeare.txt"
     if _offline():
         detail = (
@@ -156,10 +177,71 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_models(_args: argparse.Namespace) -> int:
+    """The curated open-weight models against this machine's memory and cache."""
+    from learnai.openweights import (
+        DEFAULT_MODEL,
+        MODELS,
+        DriveNotConnected,
+        cached_sizes,
+        fit,
+        gpu_budget_gb,
+        local_path,
+        models_dir,
+    )
+    from learnai.openweights import physical_memory_gb as ram
+
+    budget = gpu_budget_gb()
+    print(f"GPU memory budget {budget:.1f} GB (of {ram() * 1e9 / 2**30:.0f} GiB RAM)")
+    try:
+        cached = cached_sizes()
+        print(f"models stored in  {models_dir() or 'the default Hugging Face cache'}\n")
+    except DriveNotConnected as exc:
+        cached = {}
+        print(f"models stored in  {exc} — plug it in to use them\n")
+    print(f"  {'model':<16} {'size':>7}  {'kind':<5}  {'fits':<7}  {'downloaded':<10}  note")
+    for card in MODELS.values():
+        mark = "*" if card.key == DEFAULT_MODEL else " "
+        have = f"{cached[card.repo]:.1f} GB" if card.repo in cached else "-"
+        if card.quantize is not None:  # quantised here: ready only once converted
+            have = f"{have} -> {card.quantize}bit" if local_path(card.key) else have
+        print(
+            f"{mark} {card.key:<16} {card.run_gb:>4.1f} GB  {card.kind:<5}  "
+            f"{fit(card.run_gb, budget):<7}  {have:<10}  {card.note}"
+        )
+    print("\n* default.  make pull MODEL=<model>   make chat MODEL=<model>")
+    return 0
+
+
+def _cmd_pull(args: argparse.Namespace) -> int:
+    from learnai.openweights import pull, resolve
+
+    card = resolve(args.model)
+    print(f"downloading {card.repo} (~{card.download_gb:.1f} GB) into the Hugging Face cache")
+    if card.quantize is not None:
+        print(f"then quantising it to {card.quantize} bits (~{card.run_gb:.1f} GB) — a few minutes")
+    print(pull(args.model))
+    return 0
+
+
+def _cmd_chat(args: argparse.Namespace) -> int:
+    from learnai.openweights import chat
+
+    return chat(
+        args.model,
+        prompt=args.prompt,
+        system=args.system,
+        think=args.think,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens,
+        patch=args.patch,
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="learnai",
-        description="Inspect the learnai runtime and diagnose lesson setup.",
+        description="Inspect the learnai runtime, diagnose lesson setup, run open-weight models.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command")
@@ -174,6 +256,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="return a non-zero status for optional-environment warnings too",
     )
     doctor.set_defaults(handler=_cmd_doctor)
+
+    models = sub.add_parser("models", help="list curated open-weight models and whether they fit")
+    models.set_defaults(handler=_cmd_models)
+
+    pull = sub.add_parser("pull", help="download an open-weight model")
+    pull.add_argument("model", nargs="?", help="curated key or Hugging Face repo id")
+    pull.set_defaults(handler=_cmd_pull)
+
+    chat = sub.add_parser("chat", help="chat with an open-weight model in the terminal")
+    chat.add_argument("model", nargs="?", help="curated key or Hugging Face repo id")
+    chat.add_argument("-p", "--prompt", help="answer one prompt and exit")
+    chat.add_argument("-s", "--system", help="system prompt")
+    chat.add_argument("--think", action="store_true", help="let the model reason first")
+    chat.add_argument("-t", "--temperature", type=float, default=0.7, help="0 = greedy")
+    chat.add_argument("-n", "--max-tokens", type=int, default=2048)
+    chat.add_argument("--patch", help="apply a hand-made weight edit (.npz) after loading")
+    chat.set_defaults(handler=_cmd_chat)
 
     # `learnai` by itself should still answer the most useful setup question.
     parser.set_defaults(handler=_cmd_info)

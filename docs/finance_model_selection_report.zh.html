@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>在 12 GiB 内存预算下选一个回答金融问题的开源模型</title>
+<style>/* learnai — shared design system for the interactive pages.
+ *
+ * The palette here is identical to learnai/viz/theme.py, so a matplotlib figure
+ * in a notebook and a page in the browser read as one system.
+ *
+ * Categorical hues are validated for colorblind separation (OKLab ΔE >= 8 on
+ * adjacent pairs, protanopia + deuteranopia); assign --series-1..8 in order and
+ * never cycle past 8.
+ */
+
+:root {
+  color-scheme: light;
+
+  --surface:        #fcfcfb;
+  --page:           #f9f9f7;
+  --raised:         #ffffff;
+  --ink:            #0b0b0b;
+  --ink-2:          #52514e;
+  --ink-muted:      #898781;
+  --grid:           #e1e0d9;
+  --axis:           #c3c2b7;
+  --border:         rgba(11, 11, 11, 0.10);
+  --border-strong:  rgba(11, 11, 11, 0.18);
+
+  --series-1: #2a78d6;  --series-2: #eb6834;
+  --series-3: #1baf7a;  --series-4: #eda100;
+  --series-5: #e87ba4;  --series-6: #008300;
+  --series-7: #4a3aa7;  --series-8: #e34948;
+
+  /* sequential ramp — magnitude (attention weights, similarity) */
+  --seq-100: #cde2fb;  --seq-200: #9ec5f4;  --seq-300: #6da7ec;
+  --seq-400: #3987e5;  --seq-500: #256abf;  --seq-600: #184f95;
+  --seq-700: #0d366b;
+
+  --good: #0ca30c;  --warning: #fab219;  --critical: #d03b3b;
+
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --r-sm: 4px;  --r-md: 8px;  --r-lg: 14px;
+  --shadow: 0 1px 2px rgba(11,11,11,.05), 0 8px 24px -12px rgba(11,11,11,.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19;  --page: #0d0d0d;  --raised: #232322;
+    --ink: #ffffff;      --ink-2: #c3c2b7; --ink-muted: #898781;
+    --grid: #2c2c2a;     --axis: #383835;
+    --border: rgba(255,255,255,.10);  --border-strong: rgba(255,255,255,.20);
+    --series-1: #3987e5;  --series-2: #d95926;
+    --series-3: #199e70;  --series-4: #c98500;
+    --series-5: #d55181;  --series-6: #008300;
+    --series-7: #9085e9;  --series-8: #e66767;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19;  --page: #0d0d0d;  --raised: #232322;
+  --ink: #ffffff;      --ink-2: #c3c2b7; --ink-muted: #898781;
+  --grid: #2c2c2a;     --axis: #383835;
+  --border: rgba(255,255,255,.10);  --border-strong: rgba(255,255,255,.20);
+  --series-1: #3987e5;  --series-2: #d95926;
+  --series-3: #199e70;  --series-4: #c98500;
+  --series-5: #d55181;  --series-6: #008300;
+  --series-7: #9085e9;  --series-8: #e66767;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 20px 96px;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; }
+.wrap-wide { max-width: 1280px; margin: 0 auto; }
+
+/* ---------- header ---------- */
+
+header.page-head {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  padding: 30px 0 20px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 30px;
+}
+header.page-head h1 { font-size: 25px; font-weight: 650; margin: 0; letter-spacing: -.02em; }
+header.page-head .sub { color: var(--ink-2); font-size: 14px; margin: 0; flex: 1 1 300px; }
+.home-link {
+  color: var(--ink-muted); text-decoration: none; font-size: 13px;
+  font-family: var(--mono); white-space: nowrap;
+}
+.home-link:hover { color: var(--series-1); }
+
+/* ---------- panels ---------- */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 22px;
+  margin-bottom: 22px;
+}
+.panel > h2 {
+  font-size: 15px; font-weight: 650; margin: 0 0 4px;
+  letter-spacing: -.01em;
+}
+.panel > h2 + .hint { margin-top: 0; }
+.hint { color: var(--ink-2); font-size: 13.5px; margin: 0 0 18px; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.grid-2 > *, .grid-3 > * { min-width: 0; }
+@media (max-width: 860px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ---------- controls ---------- */
+
+.controls {
+  display: flex; flex-wrap: wrap; gap: 20px 26px; align-items: flex-end;
+  padding: 16px 18px; margin-bottom: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.control { display: flex; flex-direction: column; gap: 6px; min-width: 150px; }
+.control label {
+  font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-muted);
+  display: flex; justify-content: space-between; gap: 12px; align-items: baseline;
+}
+.control label .val {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0;
+  text-transform: none; color: var(--series-1); font-weight: 600;
+}
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 28px; border-radius: 2px;
+  background: linear-gradient(var(--axis), var(--axis)) center / 100% 3px no-repeat;
+  outline: none; cursor: pointer; margin: 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--series-1); border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--surface);
+  background: var(--series-1); box-shadow: 0 0 0 1px var(--border-strong); cursor: pointer;
+}
+
+input[type="text"], textarea, select {
+  font-family: var(--sans); font-size: 14px;
+  padding: 8px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--ink); width: 100%;
+}
+textarea { font-family: var(--mono); font-size: 13px; line-height: 1.6; resize: vertical; }
+input[type="text"]:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--series-1); outline-offset: -1px; border-color: transparent;
+}
+
+button {
+  font-family: var(--sans); font-size: 13px; font-weight: 550;
+  padding: 8px 14px; border-radius: var(--r-sm); cursor: pointer;
+  border: 1px solid var(--border-strong);
+  background: var(--raised); color: var(--ink);
+  transition: background .12s, border-color .12s;
+}
+button:hover { border-color: var(--series-1); color: var(--series-1); }
+button.primary { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+button.primary:hover { filter: brightness(1.08); color: #fff; }
+button[aria-pressed="true"] {
+  background: var(--series-1); border-color: var(--series-1); color: #fff;
+}
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---------- typography helpers ---------- */
+
+code, .mono { font-family: var(--mono); font-size: .92em; }
+code {
+  background: color-mix(in srgb, var(--series-1) 9%, transparent);
+  padding: .12em .38em; border-radius: 3px;
+}
+.eq {
+  font-family: var(--mono); font-size: 14px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-left: 3px solid var(--series-1);
+  padding: 12px 16px; border-radius: var(--r-sm);
+  margin: 16px 0; overflow-x: auto; white-space: nowrap;
+}
+.note {
+  border-left: 3px solid var(--series-4);
+  padding: 2px 0 2px 16px; margin: 20px 0;
+  color: var(--ink-2); font-size: 14px;
+}
+.note strong { color: var(--ink); font-weight: 600; }
+.muted { color: var(--ink-muted); }
+.small { font-size: 12.5px; }
+
+/* ---------- legend ---------- */
+
+.legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12.5px; }
+.legend .item { display: flex; gap: 6px; align-items: center; color: var(--ink-2); }
+.legend .swatch { width: 11px; height: 11px; border-radius: 2px; flex: none; }
+
+/* ---------- data table (the accessibility fallback for every chart) ---------- */
+
+.table-wrap { overflow-x: auto; margin-top: 14px; }
+table.data {
+  border-collapse: collapse; font-size: 12.5px;
+  font-variant-numeric: tabular-nums; width: 100%;
+}
+table.data th, table.data td {
+  padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--grid);
+  white-space: nowrap;
+}
+table.data th {
+  color: var(--ink-muted); font-weight: 600; font-size: 11px;
+  letter-spacing: .05em; text-transform: uppercase;
+}
+table.data td:first-child, table.data th:first-child { text-align: left; }
+
+details.table-toggle > summary {
+  cursor: pointer; color: var(--ink-muted); font-size: 12.5px;
+  padding: 6px 0; list-style: none;
+}
+details.table-toggle > summary::-webkit-details-marker { display: none; }
+details.table-toggle > summary::before { content: "▸ "; }
+details.table-toggle[open] > summary::before { content: "▾ "; }
+details.table-toggle > summary:hover { color: var(--series-1); }
+
+/* ---------- tooltip ---------- */
+
+#tip {
+  position: fixed; pointer-events: none; z-index: 999;
+  background: var(--ink); color: var(--page);
+  padding: 7px 10px; border-radius: var(--r-sm);
+  font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+  opacity: 0; transition: opacity .1s; max-width: 280px;
+  box-shadow: var(--shadow);
+}
+#tip.on { opacity: 1; }
+
+/* ---------- scrollable overflow container (never scroll the body) ---------- */
+
+.scroll-x { overflow-x: auto; max-width: 100%; min-width: 0; }
+
+/* ---------- theme toggle ---------- */
+
+#theme-toggle {
+  position: fixed; right: 16px; bottom: 16px; z-index: 50;
+  width: 38px; height: 38px; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; font-size: 15px;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+
+/* ---------- footer ---------- */
+
+footer.page-foot {
+  margin-top: 46px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-muted); font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+footer.page-foot a { color: var(--ink-muted); }
+
+/* ---------- narrow screens ---------- */
+
+@media (max-width: 520px) {
+  body { padding: 0 12px 88px; }
+
+  header.page-head {
+    padding: 22px 0 16px;
+    margin-bottom: 22px;
+    gap: 8px 12px;
+  }
+  header.page-head h1 { font-size: 22px; }
+  header.page-head .sub { flex-basis: 100%; }
+
+  .panel { padding: 18px; }
+  .controls { padding: 14px; gap: 14px; }
+  .controls > .control {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+  }
+
+  button { min-height: 40px; }
+  #theme-toggle {
+    right: 10px; bottom: 10px;
+    width: 42px; height: 42px;
+  }
+}
+</style>
+<style>
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  .panel { margin-top: 26px; }
+  .panel h3 { font-size: 15px; margin: 18px 0 6px; }
+  .panel p { line-height: 1.7; }
+  table { font-size: 13.5px; }
+  caption { text-align: left; color: var(--ink-muted); font-size: 12px; padding-bottom: 6px; }
+  .kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 14px 0; }
+  .kpi div { background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-lg, 10px); padding: 12px 14px; }
+  .kpi b { display: block; font-size: 22px; font-weight: 650; }
+  .kpi span { font-size: 12.5px; color: var(--ink-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="page-head">
+    <h1>在 12 GiB 内存预算下选一个回答金融问题的开源模型</h1>
+    <p class="sub">四个能装进预算的开源模型、同一套 450 道金融题、同一个内存上限；再用“读懂权重、手改权重”的办法去修它们自己的坏习惯，并和不联网的 Claude 比差距。所有数字都在这台 32 GB 的 Mac（Apple M6）上实测，2026 年 11 月 8–10 日。</p>
+  </header>
+  <section class="panel"><h2>0. 一句话结论</h2>
+<div class="kpi">
+<div><b>DianJin-R1-7B</b><span>推荐：4-bit、4k 上限；450 题 72%，单路一题约 22 秒</span></div>
+<div><b>73.8% vs 72.2%</b><span>Qwen3.5-4B 与 DianJin 在 450 题上统计打平</span></div>
+<div><b>4×</b><span>DianJin 比 4B 快的倍数：它不需要长思考</span></div>
+<div><b>92%</b><span>不联网的 Claude 在同样 150 题上的成绩（本地最好 77%）</span></div>
+</div>
+<ul>
+<li><strong>四个模型能装进 12 GiB</strong>（gpt-oss-20b 权重 11.3 GiB，出局）。16k 上限下 150 道筛选题的成绩挤在 73–77%，分不出高下；
+前两名加测到 450 题，Qwen3.5-4B 73.8%、DianJin-R1-7B 72.2%，仍是打平。</li>
+<li><strong>真正拉开差距的是“想多久”</strong>：DianJin 把上限降到 4k 一分不掉（加测集 70% → 70%），生成量少一半；
+Qwen3.5-4B 在 4k 下只剩 37–47%，必须给到 16k。所以同样的正确率，DianJin 的时间成本约为 4B 的四分之一。</li>
+<li><strong>推荐 DianJin-R1-7B（4-bit，上限 4,096 token）</strong>作为这台机器上的默认金融问答模型，中文职业考试上不比 4B 差（150 题 100 对 96）；
+英文年报计算题（FinQA）和 CFA 概念题上 4B 略好（75%/83% vs 71%/79%，差距在噪声内），愿意多等几倍时间可以用 4B。</li>
+<li><strong>权重编辑</strong>：DianJin 的“逐字循环”被精确修掉（循环 25 → 3，随机对照仍有 20），生成量少 29%，
+但正确率没有提高（编辑 215、原版 209、随机对照 224 / 300），正常题上可能有小副作用。
+Qwen 的“反复推翻自己”试了两种诊断（手写样本、模型自己答案里的“分岔点”），在模型真实的截断答案上都只有百分之一量级的作用，没有通过“先读后跑”的门槛——循环是一个能一刀切断的窄机制，“还要再想想”不是。</li>
+<li><strong>采样噪声比直觉大</strong>：两次等价的运行有 14% 的题结果不同，随机对照“赢”了 15 题（p = 0.03）。5 个百分点以内的单次差别都不可信。</li>
+<li><strong>和不联网的 Claude 差 15 个百分点</strong>，主要差在中文职业考试（92% vs 54–66%）；9B 的差距几乎全是“想不完”，不是“不会”。</li>
+</ul>
+</section>
+  <section class="panel"><h2>1. 问题与约束</h2>
+<p>要回答的问题：在一台 32 GB 的 Mac 上，给本地模型划一条内存线、保证还能同时开 Python、Jupyter、浏览器的前提下，
+哪个开源模型最适合解答金融问题？比较时允许两种取舍——小模型配长思考上限，或者大模型配短上限；
+选出来之后，再不靠数据微调、而是像论文《Sparks of Weight-Space Programming》那样，先找到某种坏习惯在激活空间里的方向、
+再改写写出这个方向的那几十列权重，看能不能把模型修得更好。</p>
+<p>“最适合”在这里拆成三件可以测量的事：<strong>答得对</strong>（三类金融题的正确率）、<strong>答得完</strong>
+（在给定 token 上限内收住思考、给出答案）、<strong>等得起</strong>（单路使用时一道题要等多久、跑分要多少 GPU 时间）。</p>
+</section>
+  <section class="panel"><h2>2. 内存预算：进程峰值 ≤ 12 GiB</h2>
+<p>这台机器有 32 GiB 统一内存，Metal 允许 GPU 常驻的上限是 25.0 GiB（<code>mx.device_info()</code>）；
+GPU 内存是“钉住”的，不会被换出——超过上限的结果不是变慢，而是直接 <code>[METAL] Insufficient Memory</code>。
+预算最初定为进程峰值 16 GiB，看过第一轮实测之后，按你的要求降到 <strong>12 GiB</strong>：
+系统本身空载约占 3 GiB，12 GiB 留下一半以上的内存给别的程序。</p>
+<p>每个模型的内存 = 常驻权重 + 每路缓存 × 并发数 + 瞬时开销。缓存的大小由架构决定：Qwen3.5 只有四分之一的层是全注意力
+（其余是固定大小状态的 Gated DeltaNet），每 token 只要 32 KiB；DianJin 基于 Qwen2.5，28 层全是注意力，每 token 56 KiB；
+Gemma 4 有 40 层是 1,024 窗口的滑动注意力。瞬时开销是实测出来的：约 0.5 GiB 加上缓存的 30%。
+gpt-oss-20b 光权重就 11.3 GiB，在 12 GiB 线内连一路都放不下，所以出局。</p>
+<p>实测过程中发现了三个让内存远超账面的陷阱，修掉之后整个评测都稳定在线内：
+① mlx-lm 默认一次读 8 道题、每块 2,048 token，读 FinQA 长题目时峰值冲到 9 GiB，改成 2 道 × 512 token 后 4 GiB、速度不变；
+② MLX 释放的缓冲区默认留在进程里不还（缓存上限默认等于内存上限 30 GiB），每 256 步扩容一次 KV 缓存留下的旧副本都算“已用”——
+设 <code>mx.set_cache_limit(1 GiB)</code>；③ 一批序列同时撞到上限时，mlx-lm 会给每条结束的序列复制一份完整缓存
+（4B 上每条 0.5 GiB，一波 12 条，实测占用从 8.6 跳到 15.1 GiB）——评测用不到这份复制，已关掉。</p>
+<div class="table-wrap"><table><thead><tr><th>模型</th><th>4-bit 权重（常驻）</th><th>每 token 缓存</th><th>每路固定</th><th>16k 上限下并发</th><th>最坏情况峰值</th></tr></thead><tbody><tr><td>Qwen3.5-4B</td><td>2.2 GiB</td><td>32 KiB（8 个全注意力层）</td><td>49 MiB（24 个 DeltaNet 状态）</td><td>11</td><td>11.5 GiB</td></tr><tr><td>Qwen3.5-9B</td><td>4.9 GiB</td><td>32 KiB</td><td>49 MiB</td><td>8</td><td>11.8 GiB</td></tr><tr><td>Gemma 4 12B-it</td><td>5.7 GiB</td><td>64 KiB（48 层中 8 层全注意力）</td><td>320 MiB（40 个 1,024 滑窗）</td><td>3</td><td>11.9 GiB</td></tr><tr><td>DianJin-R1-7B</td><td>4.0 GiB</td><td>56 KiB（28 层全注意力）</td><td>—</td><td>5</td><td>11.0 GiB</td></tr><tr><td>gpt-oss-20b（MoE）</td><td>11.3 GiB</td><td>24 KiB</td><td>3 MiB</td><td>0 —— 出局</td><td>单路 12.4 GiB</td></tr></tbody></table></div></section>
+  <section class="panel"><h2>3. 题库与判分</h2>
+<p>没有一个公开题库能单独代表“金融问答”，所以用了三个要求各不相同的：</p>
+<ul>
+<li><strong>FinQA</strong>（Chen 等, 2021，测试集，英文）：给一段上市公司年报摘录——正文加一张表——问一个要算出来的数。考阅读表格和算术。</li>
+<li><strong>CFA-Easy</strong>（Salesforce FinEval，英文）：CFA 一级风格的三选一。考金融知识和概念。</li>
+<li><strong>FinanceIQ</strong>（度小满，中文）：十类国内职业考试的四选一——注册会计师、证券、基金、期货、银行、税务师、精算师-金融数学、经济师、理财规划师、保险。考中文语境下的法规和实务。</li>
+</ul>
+<p>每个来源用固定种子打乱一次：前 50 题是<strong>筛选集</strong>（四个模型都做），接下来 100 题是<strong>加测集</strong>（前两名做），两者不重叠；
+FinanceIQ 十类考试轮流取题，所以每 50 题恰好每类 5 题。每题要求“一步步推理，最后把答案写在 \boxed{} 里”。</p>
+<p>判分规则写在 <code>learnai/finbench.py</code> 里，有 32 个单元测试：选择题比较字母；FinQA 的数值在参考值 1% 以内、
+或等于按模型给出的小数位取整后的参考值都算对（参考 0.14464，写 14% 对、15% 错）；问百分比或“率”的题，写成 14.5 或 0.145 都认；
+没写进 \boxed{} 的答案记零分，并单独计为“格式失败”。审阅错题时修过两处判分漏洞（参考值本身是百分数、税率类题目的单位），
+修完后对所有运行重新判分，表中都是修正后的数字。</p>
+<p>每个模型用它自己推荐的采样参数（用别家的参数评它不公平）：Qwen3.5 温度 0.6 / top-p 0.95 / top-k 20 / presence penalty 1.5；
+Gemma 4 温度 1.0 / 0.95 / 64；DianJin 温度 0.6 / 0.95。所有模型都开思考模式，生成上限 16,384 token，每题采样一次（种子 0）。</p>
+</section>
+  <section class="panel"><h2>4. 筛选结果：150 题，16k 上限</h2>
+<p>四个模型在同一套 150 道筛选题上的成绩。竖线是 95% 置信区间（Wilson）——150 题时区间宽约 ±7 个百分点。</p>
+<svg viewBox="0 0 760 300" role="img" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto"><line x1="44" x2="750" y1="244.0" y2="244.0" stroke="var(--grid)" /><text x="38" y="248.0" text-anchor="end" font-size="11" fill="var(--ink-muted)">0%</text><line x1="44" x2="750" y1="198.4" y2="198.4" stroke="var(--grid)" /><text x="38" y="202.4" text-anchor="end" font-size="11" fill="var(--ink-muted)">20%</text><line x1="44" x2="750" y1="152.8" y2="152.8" stroke="var(--grid)" /><text x="38" y="156.8" text-anchor="end" font-size="11" fill="var(--ink-muted)">40%</text><line x1="44" x2="750" y1="107.2" y2="107.2" stroke="var(--grid)" /><text x="38" y="111.2" text-anchor="end" font-size="11" fill="var(--ink-muted)">60%</text><line x1="44" x2="750" y1="61.6" y2="61.6" stroke="var(--grid)" /><text x="38" y="65.6" text-anchor="end" font-size="11" fill="var(--ink-muted)">80%</text><line x1="44" x2="750" y1="16.0" y2="16.0" stroke="var(--grid)" /><text x="38" y="20.0" text-anchor="end" font-size="11" fill="var(--ink-muted)">100%</text><rect x="67.2" y="66.2" width="23.0" height="177.8" fill="var(--series-1)" rx="2"><title>DianJin-R1-7B · FinQA（财报数值）: 78% [65–87]</title></rect><line x1="78.8" x2="78.8" y1="96.4" y2="45.1" stroke="var(--ink)" stroke-opacity=".55" /><text x="78.8" y="62.2" text-anchor="middle" font-size="10" fill="var(--ink-2)">78</text><rect x="93.2" y="70.7" width="23.0" height="173.3" fill="var(--series-2)" rx="2"><title>Qwen3.5-4B · FinQA（财报数值）: 76% [63–86]</title></rect><line x1="104.8" x2="104.8" y1="101.3" y2="48.6" stroke="var(--ink)" stroke-opacity=".55" /><text x="104.8" y="66.7" text-anchor="middle" font-size="10" fill="var(--ink-2)">76</text><rect x="119.2" y="61.6" width="23.0" height="182.4" fill="var(--series-3)" rx="2"><title>Qwen3.5-9B · FinQA（财报数值）: 80% [67–89]</title></rect><line x1="130.8" x2="130.8" y1="91.3" y2="41.6" stroke="var(--ink)" stroke-opacity=".55" /><text x="130.8" y="57.6" text-anchor="middle" font-size="10" fill="var(--ink-2)">80</text><rect x="145.2" y="79.8" width="23.0" height="164.2" fill="var(--series-4)" rx="2"><title>Gemma 4 12B · FinQA（财报数值）: 72% [58–83]</title></rect><line x1="156.8" x2="156.8" y1="111.0" y2="55.8" stroke="var(--ink)" stroke-opacity=".55" /><text x="156.8" y="75.8" text-anchor="middle" font-size="10" fill="var(--ink-2)">72</text><rect x="171.2" y="43.4" width="23.0" height="200.6" fill="var(--series-7)" rx="2"><title>Claude 离线参照 · FinQA（财报数值）: 88% [76–94]</title></rect><line x1="182.8" x2="182.8" y1="70.3" y2="28.8" stroke="var(--ink)" stroke-opacity=".55" /><text x="182.8" y="39.4" text-anchor="middle" font-size="10" fill="var(--ink-2)">88</text><text x="132.2" y="262" text-anchor="middle" font-size="12" fill="var(--ink-2)">FinQA（财报数值）</text><rect x="243.8" y="43.4" width="23.0" height="200.6" fill="var(--series-1)" rx="2"><title>DianJin-R1-7B · CFA-Easy（英文选择）: 88% [76–94]</title></rect><line x1="255.2" x2="255.2" y1="70.3" y2="28.8" stroke="var(--ink)" stroke-opacity=".55" /><text x="255.2" y="39.4" text-anchor="middle" font-size="10" fill="var(--ink-2)">88</text><rect x="269.8" y="47.9" width="23.0" height="196.1" fill="var(--series-2)" rx="2"><title>Qwen3.5-4B · CFA-Easy（英文选择）: 86% [74–93]</title></rect><line x1="281.2" x2="281.2" y1="75.7" y2="31.8" stroke="var(--ink)" stroke-opacity=".55" /><text x="281.2" y="43.9" text-anchor="middle" font-size="10" fill="var(--ink-2)">86</text><rect x="295.8" y="52.5" width="23.0" height="191.5" fill="var(--series-3)" rx="2"><title>Qwen3.5-9B · CFA-Easy（英文选择）: 84% [71–92]</title></rect><line x1="307.2" x2="307.2" y1="81.0" y2="35.0" stroke="var(--ink)" stroke-opacity=".55" /><text x="307.2" y="48.5" text-anchor="middle" font-size="10" fill="var(--ink-2)">84</text><rect x="321.8" y="43.4" width="23.0" height="200.6" fill="var(--series-4)" rx="2"><title>Gemma 4 12B · CFA-Easy（英文选择）: 88% [76–94]</title></rect><line x1="333.2" x2="333.2" y1="70.3" y2="28.8" stroke="var(--ink)" stroke-opacity=".55" /><text x="333.2" y="39.4" text-anchor="middle" font-size="10" fill="var(--ink-2)">88</text><rect x="347.8" y="25.1" width="23.0" height="218.9" fill="var(--series-7)" rx="2"><title>Claude 离线参照 · CFA-Easy（英文选择）: 96% [87–99]</title></rect><line x1="359.2" x2="359.2" y1="46.7" y2="18.5" stroke="var(--ink)" stroke-opacity=".55" /><text x="359.2" y="21.1" text-anchor="middle" font-size="10" fill="var(--ink-2)">96</text><text x="308.8" y="262" text-anchor="middle" font-size="12" fill="var(--ink-2)">CFA-Easy（英文选择）</text><rect x="420.2" y="93.5" width="23.0" height="150.5" fill="var(--series-1)" rx="2"><title>DianJin-R1-7B · FinanceIQ（中文考试）: 66% [52–78]</title></rect><line x1="431.8" x2="431.8" y1="125.1" y2="67.2" stroke="var(--ink)" stroke-opacity=".55" /><text x="431.8" y="89.5" text-anchor="middle" font-size="10" fill="var(--ink-2)">66</text><rect x="446.2" y="93.5" width="23.0" height="150.5" fill="var(--series-2)" rx="2"><title>Qwen3.5-4B · FinanceIQ（中文考试）: 66% [52–78]</title></rect><line x1="457.8" x2="457.8" y1="125.1" y2="67.2" stroke="var(--ink)" stroke-opacity=".55" /><text x="457.8" y="89.5" text-anchor="middle" font-size="10" fill="var(--ink-2)">66</text><rect x="472.2" y="120.9" width="23.0" height="123.1" fill="var(--series-3)" rx="2"><title>Qwen3.5-9B · FinanceIQ（中文考试）: 54% [40–67]</title></rect><line x1="483.8" x2="483.8" y1="151.9" y2="91.2" stroke="var(--ink)" stroke-opacity=".55" /><text x="483.8" y="116.9" text-anchor="middle" font-size="10" fill="var(--ink-2)">54</text><rect x="498.2" y="107.2" width="23.0" height="136.8" fill="var(--series-4)" rx="2"><title>Gemma 4 12B · FinanceIQ（中文考试）: 60% [46–72]</title></rect><line x1="509.8" x2="509.8" y1="138.7" y2="78.9" stroke="var(--ink)" stroke-opacity=".55" /><text x="509.8" y="103.2" text-anchor="middle" font-size="10" fill="var(--ink-2)">60</text><rect x="524.2" y="34.2" width="23.0" height="209.8" fill="var(--series-7)" rx="2"><title>Claude 离线参照 · FinanceIQ（中文考试）: 92% [81–97]</title></rect><line x1="535.8" x2="535.8" y1="59.0" y2="23.2" stroke="var(--ink)" stroke-opacity=".55" /><text x="535.8" y="30.2" text-anchor="middle" font-size="10" fill="var(--ink-2)">92</text><text x="485.2" y="262" text-anchor="middle" font-size="12" fill="var(--ink-2)">FinanceIQ（中文考试）</text><rect x="596.8" y="67.7" width="23.0" height="176.3" fill="var(--series-1)" rx="2"><title>DianJin-R1-7B · 合计: 77% [70–83]</title></rect><line x1="608.2" x2="608.2" y1="84.4" y2="54.1" stroke="var(--ink)" stroke-opacity=".55" /><text x="608.2" y="63.7" text-anchor="middle" font-size="10" fill="var(--ink-2)">77</text><rect x="622.8" y="70.7" width="23.0" height="173.3" fill="var(--series-2)" rx="2"><title>Qwen3.5-4B · 合计: 76% [69–82]</title></rect><line x1="634.2" x2="634.2" y1="87.7" y2="56.7" stroke="var(--ink)" stroke-opacity=".55" /><text x="634.2" y="66.7" text-anchor="middle" font-size="10" fill="var(--ink-2)">76</text><rect x="648.8" y="78.3" width="23.0" height="165.7" fill="var(--series-3)" rx="2"><title>Qwen3.5-9B · 合计: 73% [65–79]</title></rect><line x1="660.2" x2="660.2" y1="95.7" y2="63.5" stroke="var(--ink)" stroke-opacity=".55" /><text x="660.2" y="74.3" text-anchor="middle" font-size="10" fill="var(--ink-2)">73</text><rect x="674.8" y="76.8" width="23.0" height="167.2" fill="var(--series-4)" rx="2"><title>Gemma 4 12B · 合计: 73% [66–80]</title></rect><line x1="686.2" x2="686.2" y1="94.1" y2="62.1" stroke="var(--ink)" stroke-opacity=".55" /><text x="686.2" y="72.8" text-anchor="middle" font-size="10" fill="var(--ink-2)">73</text><rect x="700.8" y="34.2" width="23.0" height="209.8" fill="var(--series-7)" rx="2"><title>Claude 离线参照 · 合计: 92% [87–95]</title></rect><line x1="712.2" x2="712.2" y1="46.7" y2="26.6" stroke="var(--ink)" stroke-opacity=".55" /><text x="712.2" y="30.2" text-anchor="middle" font-size="10" fill="var(--ink-2)">92</text><text x="661.8" y="262" text-anchor="middle" font-size="12" fill="var(--ink-2)">合计</text><rect x="44" y="284" width="12" height="12" fill="var(--series-1)" rx="2" /><text x="60" y="294" font-size="11" fill="var(--ink-2)">DianJin-R1-7B</text><rect x="175" y="284" width="12" height="12" fill="var(--series-2)" rx="2" /><text x="191" y="294" font-size="11" fill="var(--ink-2)">Qwen3.5-4B</text><rect x="285" y="284" width="12" height="12" fill="var(--series-3)" rx="2" /><text x="301" y="294" font-size="11" fill="var(--ink-2)">Qwen3.5-9B</text><rect x="395" y="284" width="12" height="12" fill="var(--series-4)" rx="2" /><text x="411" y="294" font-size="11" fill="var(--ink-2)">Gemma 4 12B</text><rect x="512" y="284" width="12" height="12" fill="var(--series-7)" rx="2" /><text x="528" y="294" font-size="11" fill="var(--ink-2)">Claude 离线参照</text></svg><details class="table-toggle"><summary>数据表</summary><div class="table-wrap"><table><thead><tr><th>模型</th><th>FinQA（财报数值）</th><th>CFA-Easy（英文选择）</th><th>FinanceIQ（中文考试）</th><th>合计</th></tr></thead><tbody><tr><td>DianJin-R1-7B</td><td>78% [65–87]</td><td>88% [76–94]</td><td>66% [52–78]</td><td>77% [70–83]</td></tr><tr><td>Qwen3.5-4B</td><td>76% [63–86]</td><td>86% [74–93]</td><td>66% [52–78]</td><td>76% [69–82]</td></tr><tr><td>Qwen3.5-9B</td><td>80% [67–89]</td><td>84% [71–92]</td><td>54% [40–67]</td><td>73% [65–79]</td></tr><tr><td>Gemma 4 12B</td><td>72% [58–83]</td><td>88% [76–94]</td><td>60% [46–72]</td><td>73% [66–80]</td></tr><tr><td>Claude 离线参照</td><td>88% [76–94]</td><td>96% [87–99]</td><td>92% [81–97]</td><td>92% [87–95]</td></tr></tbody></table></div></details><div class="table-wrap"><table><thead><tr><th>模型</th><th>FinQA（财报数值）</th><th>CFA-Easy（英文选择）</th><th>FinanceIQ（中文考试）</th><th>合计 [95% 区间]</th><th>撞 16k 上限</th><th>答完的题正确率</th><th>token 中位</th><th>单路一题</th><th>跑分用时</th></tr></thead><tbody><tr><td>DianJin-R1-7B</td><td>78%</td><td>88%</td><td>66%</td><td><strong>77%</strong> <span class='mono' style='color:var(--ink-muted)'>[70–83]</span></td><td>9（9 循环）</td><td>82%</td><td>744</td><td>22 秒</td><td>53 分</td></tr><tr><td>Qwen3.5-4B</td><td>76%</td><td>86%</td><td>66%</td><td><strong>76%</strong> <span class='mono' style='color:var(--ink-muted)'>[69–82]</span></td><td>19（4 循环）</td><td>86%</td><td>4,934</td><td>88 秒</td><td>111 分</td></tr><tr><td>Qwen3.5-9B</td><td>80%</td><td>84%</td><td>54%</td><td><strong>73%</strong> <span class='mono' style='color:var(--ink-muted)'>[65–79]</span></td><td>31（0 循环）</td><td>92%</td><td>7,171</td><td>231 秒</td><td>241 分</td></tr><tr><td>Gemma 4 12B</td><td>72%</td><td>88%</td><td>60%</td><td><strong>73%</strong> <span class='mono' style='color:var(--ink-muted)'>[66–80]</span></td><td>19（8 循环）</td><td>84%</td><td>4,495</td><td>231 秒</td><td>387 分</td></tr><tr><td>Claude 离线参照</td><td>88%</td><td>96%</td><td>92%</td><td><strong>92%</strong> <span class='mono' style='color:var(--ink-muted)'>[87–95]</span></td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr></tbody></table></div>
+<p><strong>16k 上限下，四个模型的总分挤在 73–77% 之间，置信区间全部重叠</strong>：150 题分不出高下。
+但它们答题的方式差别极大。DianJin 的答案中位数只有 744 token，单路一题中位 22 秒；三个通用模型要想 4–7 千 token，一题 1.5–4 分钟。
+Gemma 4 12B 成绩不占优、单路最慢（19.6 token/秒）、跑完 150 题用了 6.5 小时，在这里出局。
+Qwen3.5-9B 的总分最低，但它<strong>答完了的题里 92% 是对的</strong>（四个模型最高）——它输在 21% 的题想到 16k 还没想完。</p>
+<p class="note">4B 那次运行的峰值 15.5 GiB 出现在修复第 ③ 个内存陷阱之前；其余运行都在 12 GiB 线内（9.4–10.8 GiB）。</p>
+</section>
+  <section class="panel"><h2>5. 上限换小会掉多少</h2>
+<p>“小模型配长上限还是大模型配短上限”这个取舍，可以不重跑就回答：把存下来的每个答案截到更小的上限、重新判分，
+就是该模型在那个上限下的成绩（截断后若推理没收尾，就看推理中途写下的最后一个 \boxed{}，与正式协议一致）。</p>
+<p>DianJin 在 2k 上限下还有 75%——它几乎不需要长思考；三个通用模型在 8k 以下掉得很厉害，9B 掉得最狠。
+换句话说，内存预算真正约束住的不是“能装多大的模型”，而是“能让它想多久”：在 12 GiB 下四个模型单路都能开到 7 万 token 以上的上下文，
+但跑一道题的时间和批量评测的并发数直接取决于它想多长。</p>
+<svg viewBox="0 0 760 300" role="img" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto"><line x1="44" x2="650" y1="244.0" y2="244.0" stroke="var(--grid)" /><text x="38" y="248.0" text-anchor="end" font-size="11" fill="var(--ink-muted)">0%</text><line x1="44" x2="650" y1="198.4" y2="198.4" stroke="var(--grid)" /><text x="38" y="202.4" text-anchor="end" font-size="11" fill="var(--ink-muted)">20%</text><line x1="44" x2="650" y1="152.8" y2="152.8" stroke="var(--grid)" /><text x="38" y="156.8" text-anchor="end" font-size="11" fill="var(--ink-muted)">40%</text><line x1="44" x2="650" y1="107.2" y2="107.2" stroke="var(--grid)" /><text x="38" y="111.2" text-anchor="end" font-size="11" fill="var(--ink-muted)">60%</text><line x1="44" x2="650" y1="61.6" y2="61.6" stroke="var(--grid)" /><text x="38" y="65.6" text-anchor="end" font-size="11" fill="var(--ink-muted)">80%</text><line x1="44" x2="650" y1="16.0" y2="16.0" stroke="var(--grid)" /><text x="38" y="20.0" text-anchor="end" font-size="11" fill="var(--ink-muted)">100%</text><text x="44.0" y="262" text-anchor="middle" font-size="11" fill="var(--ink-2)">1k</text><text x="195.5" y="262" text-anchor="middle" font-size="11" fill="var(--ink-2)">2k</text><text x="347.0" y="262" text-anchor="middle" font-size="11" fill="var(--ink-2)">4k</text><text x="498.5" y="262" text-anchor="middle" font-size="11" fill="var(--ink-2)">8k</text><text x="587.1" y="262" text-anchor="middle" font-size="11" fill="var(--ink-2)">12k</text><text x="650.0" y="262" text-anchor="middle" font-size="11" fill="var(--ink-2)">16k</text><text x="402.0" y="280" text-anchor="middle" font-size="12" fill="var(--ink-muted)">生成 token 上限（对数刻度）</text><polyline points="44.0,114.8 195.5,72.2 347.0,69.2 498.5,67.7 587.1,67.7 650.0,67.7" fill="none" stroke="var(--series-1)" stroke-width="2.2" /><circle cx="44.0" cy="114.8" r="3.2" fill="var(--series-1)"><title>DianJin-R1-7B @ 1024: 57%</title></circle><circle cx="195.5" cy="72.2" r="3.2" fill="var(--series-1)"><title>DianJin-R1-7B @ 2048: 75%</title></circle><circle cx="347.0" cy="69.2" r="3.2" fill="var(--series-1)"><title>DianJin-R1-7B @ 4096: 77%</title></circle><circle cx="498.5" cy="67.7" r="3.2" fill="var(--series-1)"><title>DianJin-R1-7B @ 8192: 77%</title></circle><circle cx="587.1" cy="67.7" r="3.2" fill="var(--series-1)"><title>DianJin-R1-7B @ 12288: 77%</title></circle><circle cx="650.0" cy="67.7" r="3.2" fill="var(--series-1)"><title>DianJin-R1-7B @ 16384: 77%</title></circle><text x="658.0" y="71.7" font-size="11" fill="var(--series-1)">DianJin-R1-7B</text><polyline points="44.0,227.3 195.5,189.3 347.0,136.1 498.5,96.6 587.1,75.3 650.0,70.7" fill="none" stroke="var(--series-2)" stroke-width="2.2" /><circle cx="44.0" cy="227.3" r="3.2" fill="var(--series-2)"><title>Qwen3.5-4B @ 1024: 7%</title></circle><circle cx="195.5" cy="189.3" r="3.2" fill="var(--series-2)"><title>Qwen3.5-4B @ 2048: 24%</title></circle><circle cx="347.0" cy="136.1" r="3.2" fill="var(--series-2)"><title>Qwen3.5-4B @ 4096: 47%</title></circle><circle cx="498.5" cy="96.6" r="3.2" fill="var(--series-2)"><title>Qwen3.5-4B @ 8192: 65%</title></circle><circle cx="587.1" cy="75.3" r="3.2" fill="var(--series-2)"><title>Qwen3.5-4B @ 12288: 74%</title></circle><circle cx="650.0" cy="70.7" r="3.2" fill="var(--series-2)"><title>Qwen3.5-4B @ 16384: 76%</title></circle><text x="658.0" y="84.7" font-size="11" fill="var(--series-2)">Qwen3.5-4B</text><polyline points="44.0,241.0 195.5,219.7 347.0,165.0 498.5,117.8 587.1,92.0 650.0,78.3" fill="none" stroke="var(--series-3)" stroke-width="2.2" /><circle cx="44.0" cy="241.0" r="3.2" fill="var(--series-3)"><title>Qwen3.5-9B @ 1024: 1%</title></circle><circle cx="195.5" cy="219.7" r="3.2" fill="var(--series-3)"><title>Qwen3.5-9B @ 2048: 11%</title></circle><circle cx="347.0" cy="165.0" r="3.2" fill="var(--series-3)"><title>Qwen3.5-9B @ 4096: 35%</title></circle><circle cx="498.5" cy="117.8" r="3.2" fill="var(--series-3)"><title>Qwen3.5-9B @ 8192: 55%</title></circle><circle cx="587.1" cy="92.0" r="3.2" fill="var(--series-3)"><title>Qwen3.5-9B @ 12288: 67%</title></circle><circle cx="650.0" cy="78.3" r="3.2" fill="var(--series-3)"><title>Qwen3.5-9B @ 16384: 73%</title></circle><text x="658.0" y="110.7" font-size="11" fill="var(--series-3)">Qwen3.5-9B</text><polyline points="44.0,224.2 195.5,183.2 347.0,140.6 498.5,116.3 587.1,92.0 650.0,76.8" fill="none" stroke="var(--series-4)" stroke-width="2.2" /><circle cx="44.0" cy="224.2" r="3.2" fill="var(--series-4)"><title>Gemma 4 12B @ 1024: 9%</title></circle><circle cx="195.5" cy="183.2" r="3.2" fill="var(--series-4)"><title>Gemma 4 12B @ 2048: 27%</title></circle><circle cx="347.0" cy="140.6" r="3.2" fill="var(--series-4)"><title>Gemma 4 12B @ 4096: 45%</title></circle><circle cx="498.5" cy="116.3" r="3.2" fill="var(--series-4)"><title>Gemma 4 12B @ 8192: 56%</title></circle><circle cx="587.1" cy="92.0" r="3.2" fill="var(--series-4)"><title>Gemma 4 12B @ 12288: 67%</title></circle><circle cx="650.0" cy="76.8" r="3.2" fill="var(--series-4)"><title>Gemma 4 12B @ 16384: 73%</title></circle><text x="658.0" y="97.7" font-size="11" fill="var(--series-4)">Gemma 4 12B</text></svg><details class="table-toggle"><summary>数据表</summary><div class="table-wrap"><table><thead><tr><th>模型</th><th>1k</th><th>2k</th><th>4k</th><th>8k</th><th>12k</th><th>16k</th></tr></thead><tbody><tr><td>DianJin-R1-7B</td><td>57%</td><td>75%</td><td>77%</td><td>77%</td><td>77%</td><td>77%</td></tr><tr><td>Qwen3.5-4B</td><td>7%</td><td>24%</td><td>47%</td><td>65%</td><td>74%</td><td>76%</td></tr><tr><td>Qwen3.5-9B</td><td>1%</td><td>11%</td><td>35%</td><td>55%</td><td>67%</td><td>73%</td></tr><tr><td>Gemma 4 12B</td><td>9%</td><td>27%</td><td>45%</td><td>56%</td><td>67%</td><td>73%</td></tr></tbody></table></div></details></section>
+  <section class="panel"><h2>6. 错在哪里</h2>
+<p>把每道错题归到一类（<code>finance_model_select.py failures</code>）：</p>
+<div class="table-wrap"><table><thead><tr><th>模型</th><th>答对</th><th>答错（知识/读题）</th><th>量级/单位错</th><th>没按格式作答</th><th>想不完被截断</th><th>逐字循环</th></tr></thead><tbody><tr><td>DianJin-R1-7B</td><td>116</td><td>25</td><td>0</td><td>0</td><td>0</td><td>9</td></tr><tr><td>Qwen3.5-4B</td><td>114</td><td>18</td><td>0</td><td>0</td><td>15</td><td>3</td></tr><tr><td>Qwen3.5-9B</td><td>109</td><td>10</td><td>0</td><td>0</td><td>31</td><td>0</td></tr><tr><td>Gemma 4 12B</td><td>110</td><td>21</td><td>0</td><td>0</td><td>11</td><td>8</td></tr></tbody></table></div>
+<p>错误分成两种性质完全不同的东西。<strong>知识或读题错</strong>（答完了但答错）是能力问题，权重编辑修不了；
+<strong>想不完被截断</strong>和<strong>逐字循环</strong>是行为问题——模型其实可能会，只是收不住。</p>
+<p>三个 Qwen 系模型（DianJin 的底座也是 Qwen）的行为缺陷各不相同：DianJin 的 9 道没答完的题<strong>全部是逐字循环</strong>，
+这正是论文在 Qwen3.5-0.8B 上修掉的那种毛病；9B 的 31 道没有一道是循环，而是“已经得出答案还在反复推翻自己”
+（读这些答案的结尾：<em>“However, let's look at the wording again… Is there another interpretation?”</em>），
+4B 两种都有（19 道撞上限，其中 4 道循环）。没有任何模型出现“不按格式作答”。</p>
+</section>
+  <section class="panel"><h2>7. 前两名加测 300 题</h2>
+<p>筛选分不出高下，所以给前两名（DianJin、Qwen3.5-4B）各加测 300 道新题（每个来源 100 题，与筛选集不重叠），合计 450 题。</p>
+<div class="table-wrap"><table><thead><tr><th>模型</th><th>FinQA（财报数值）</th><th>CFA-Easy（英文选择）</th><th>FinanceIQ（中文考试）</th><th>加测 300 题</th><th>合计 450 题 [95% 区间]</th><th>撞上限</th></tr></thead><tbody><tr><td>DianJin-R1-7B</td><td>67%</td><td>74%</td><td>68%</td><td>209/300 = 70% [64–75]</td><td><strong>325/450 = 72%</strong> [68–76]</td><td>25（25 循环）</td></tr><tr><td>Qwen3.5-4B</td><td>75%</td><td>81%</td><td>62%</td><td>218/300 = 73% [67–77]</td><td><strong>332/450 = 74%</strong> [70–78]</td><td>30（8 循环）</td></tr></tbody></table></div>
+<p>450 题上 <strong>Qwen3.5-4B 332 题对（73.8%），DianJin 325 题对（72.2%）</strong>，只差 7 题，置信区间几乎完全重叠——统计上打平。
+两者的长处互补：4B 在 FinQA（75% vs 71%）和 CFA（83% vs 79%）上更好，DianJin 在中文职业考试上更好（67% vs 63%）。
+DianJin 的循环率在加测中保持在 8%（300 题里 25 道循环到上限），4B 有 30 道撞上限（其中 8 道循环）。
+代价差一个数量级：DianJin 加测 300 题用了 2.1 小时，4B 用了 4.1 小时（中间机器重启过一次，从 282 题处续跑）；单路使用 DianJin 一题 22 秒，4B 88 秒。</p>
+</section>
+  <section class="panel"><h2>8. 权重编辑：原版 vs 编辑版 vs 随机对照</h2>
+<p>“不靠数据微调、读懂权重后手改”的做法，照搬论文（Takehi 等, MIT CSAIL, 2026）在 Qwen3.5-0.8B 上的配方，
+本仓库在 <code>docs/WEIGHT_EDITING.md</code> 里已经复现过：</p>
+<ol>
+<li><strong>对照样本</strong>：同一段推理的两个结尾，一个正常收住，一个出现要修的毛病。两者问题相同、开头相同，结尾处激活的差别就只和“毛病”有关。</li>
+<li><strong>方向</strong>：两组结尾处残差流的均值之差，归一化成单位向量 d——“出毛病时，激活往哪边偏”。</li>
+<li><strong>责任神经元</strong>：一个 MLP 神经元 j 往残差流里写的是 a<sub>j</sub>·w<sub>j</sub>，沿 d 的分量是 a<sub>j</sub>(w<sub>j</sub>·d)；
+两组之差最大的 64 个神经元就是“把模型推向毛病”的那些。</li>
+<li><strong>改写</strong>：把这 64 列输出权重沿 d 的分量反转放大，w<sub>j</sub> ← w<sub>j</sub> − 6 (w<sub>j</sub>·d) d。
+每层改 64 × 3,584 个数（DianJin），不到全部权重的万分之一。</li>
+<li><strong>先读后跑</strong>：生成很贵，所以先“只读不写”——让编辑前后的模型去读同一批现成文本，看重复内容的概率降了多少、
+正常文本的概率伤了多少（每个候选几十秒）。只有探针里表现好的补丁才去跑生成。</li>
+<li><strong>随机对照</strong>：同样的列、同样大小的改动，但方向随机。对照组带来的“修好/弄坏”就是采样噪声的尺度。</li>
+</ol>
+<p>为了不自欺：<strong>设计编辑用到的一切（对照样本、选层、选补丁）只用筛选集的 150 题；评测编辑只用加测的 300 题</strong>（或其子集），
+那批题在设计时一眼都没看过。</p>
+<h3>DianJin-R1-7B：在哪一层改</h3><svg viewBox="0 0 760 280" role="img" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto"><line x1="52" x2="750" y1="226.0" y2="226.0" stroke="var(--grid)" /><text x="46" y="230.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.18</text><line x1="52" x2="750" y1="173.0" y2="173.0" stroke="var(--grid)" /><text x="46" y="177.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.14</text><line x1="52" x2="750" y1="120.0" y2="120.0" stroke="var(--grid)" /><text x="46" y="124.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.09</text><line x1="52" x2="750" y1="67.0" y2="67.0" stroke="var(--grid)" /><text x="46" y="71.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.05</text><line x1="52" x2="750" y1="14.0" y2="14.0" stroke="var(--grid)" /><text x="46" y="18.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">+0.00</text><line x1="52" x2="750" y1="14.0" y2="14.0" stroke="var(--axis)" /><rect x="56.3" y="14.0" width="7.6" height="18.3" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 0 层: -0.016</title></rect><rect x="64.9" y="14.0" width="7.6" height="123.8" fill="var(--series-1)"><title>正常推理文本 · 第 0 层: -0.108</title></rect><text x="64.9" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">0</text><rect x="82.2" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 1 层: +0.000</title></rect><rect x="90.8" y="14.0" width="7.6" height="4.6" fill="var(--series-1)"><title>正常推理文本 · 第 1 层: -0.004</title></rect><rect x="108.0" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 2 层: +0.000</title></rect><rect x="116.6" y="14.0" width="7.6" height="2.3" fill="var(--series-1)"><title>正常推理文本 · 第 2 层: -0.002</title></rect><text x="116.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">2</text><rect x="133.9" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 3 层: -0.001</title></rect><rect x="142.5" y="14.0" width="7.6" height="2.3" fill="var(--series-1)"><title>正常推理文本 · 第 3 层: -0.002</title></rect><rect x="159.7" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 4 层: -0.001</title></rect><rect x="168.3" y="14.0" width="7.6" height="1.1" fill="var(--series-1)"><title>正常推理文本 · 第 4 层: -0.001</title></rect><text x="168.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">4</text><rect x="185.6" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 5 层: -0.001</title></rect><rect x="194.2" y="14.0" width="7.6" height="1.1" fill="var(--series-1)"><title>正常推理文本 · 第 5 层: -0.001</title></rect><rect x="211.4" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 6 层: -0.001</title></rect><rect x="220.0" y="14.0" width="7.6" height="2.3" fill="var(--series-1)"><title>正常推理文本 · 第 6 层: -0.002</title></rect><text x="220.0" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">6</text><rect x="237.3" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 7 层: -0.001</title></rect><rect x="245.9" y="14.0" width="7.6" height="1.1" fill="var(--series-1)"><title>正常推理文本 · 第 7 层: -0.001</title></rect><rect x="263.1" y="14.0" width="7.6" height="11.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 8 层: -0.010</title></rect><rect x="271.7" y="14.0" width="7.6" height="12.6" fill="var(--series-1)"><title>正常推理文本 · 第 8 层: -0.011</title></rect><text x="271.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">8</text><rect x="289.0" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 9 层: +0.000</title></rect><rect x="297.6" y="14.0" width="7.6" height="2.3" fill="var(--series-1)"><title>正常推理文本 · 第 9 层: -0.002</title></rect><rect x="314.8" y="14.0" width="7.6" height="2.3" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 10 层: -0.002</title></rect><rect x="323.4" y="14.0" width="7.6" height="4.6" fill="var(--series-1)"><title>正常推理文本 · 第 10 层: -0.004</title></rect><text x="323.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">10</text><rect x="340.7" y="14.0" width="7.6" height="2.3" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 11 层: -0.002</title></rect><rect x="349.3" y="14.0" width="7.6" height="10.3" fill="var(--series-1)"><title>正常推理文本 · 第 11 层: -0.009</title></rect><rect x="366.5" y="14.0" width="7.6" height="2.3" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 12 层: -0.002</title></rect><rect x="375.1" y="14.0" width="7.6" height="14.9" fill="var(--series-1)"><title>正常推理文本 · 第 12 层: -0.013</title></rect><text x="375.1" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">12</text><rect x="392.4" y="14.0" width="7.6" height="4.6" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 13 层: -0.004</title></rect><rect x="401.0" y="14.0" width="7.6" height="11.5" fill="var(--series-1)"><title>正常推理文本 · 第 13 层: -0.010</title></rect><rect x="418.2" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 14 层: +0.000</title></rect><rect x="426.9" y="14.0" width="7.6" height="2.3" fill="var(--series-1)"><title>正常推理文本 · 第 14 层: -0.002</title></rect><text x="426.9" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">14</text><rect x="444.1" y="14.0" width="7.6" height="26.4" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 15 层: -0.023</title></rect><rect x="452.7" y="14.0" width="7.6" height="17.2" fill="var(--series-1)"><title>正常推理文本 · 第 15 层: -0.015</title></rect><rect x="469.9" y="14.0" width="7.6" height="3.4" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 16 层: -0.003</title></rect><rect x="478.6" y="14.0" width="7.6" height="11.5" fill="var(--series-1)"><title>正常推理文本 · 第 16 层: -0.010</title></rect><text x="478.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">16</text><rect x="495.8" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 17 层: +0.000</title></rect><rect x="504.4" y="14.0" width="7.6" height="1.1" fill="var(--series-1)"><title>正常推理文本 · 第 17 层: -0.001</title></rect><rect x="521.6" y="14.0" width="7.6" height="120.3" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 18 层: -0.105</title></rect><rect x="530.3" y="14.0" width="7.6" height="51.6" fill="var(--series-1)"><title>正常推理文本 · 第 18 层: -0.045</title></rect><text x="530.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">18</text><rect x="547.5" y="14.0" width="7.6" height="69.9" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 19 层: -0.061</title></rect><rect x="556.1" y="14.0" width="7.6" height="14.9" fill="var(--series-1)"><title>正常推理文本 · 第 19 层: -0.013</title></rect><rect x="573.3" y="14.0" width="7.6" height="110.0" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 20 层: -0.096</title></rect><rect x="582.0" y="14.0" width="7.6" height="20.6" fill="var(--series-1)"><title>正常推理文本 · 第 20 层: -0.018</title></rect><text x="582.0" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">20</text><rect x="599.2" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 21 层: -0.001</title></rect><rect x="607.8" y="14.0" width="7.6" height="3.4" fill="var(--series-1)"><title>正常推理文本 · 第 21 层: -0.003</title></rect><rect x="625.0" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 22 层: -0.001</title></rect><rect x="633.7" y="14.0" width="7.6" height="11.5" fill="var(--series-1)"><title>正常推理文本 · 第 22 层: -0.010</title></rect><text x="633.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">22</text><rect x="650.9" y="14.0" width="7.6" height="1.1" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 23 层: -0.001</title></rect><rect x="659.5" y="14.0" width="7.6" height="3.4" fill="var(--series-1)"><title>正常推理文本 · 第 23 层: -0.003</title></rect><rect x="676.8" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 24 层: +0.000</title></rect><rect x="685.4" y="14.0" width="7.6" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 24 层: +0.000</title></rect><text x="685.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">24</text><rect x="702.6" y="14.0" width="7.6" height="0.5" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 25 层: +0.000</title></rect><rect x="711.2" y="14.0" width="7.6" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 25 层: +0.000</title></rect><rect x="728.5" y="14.0" width="7.6" height="212.0" fill="var(--series-8)"><title>真实循环里的重复内容 · 第 26 层: -0.185</title></rect><rect x="737.1" y="14.0" width="7.6" height="74.5" fill="var(--series-1)"><title>正常推理文本 · 第 26 层: -0.065</title></rect><text x="737.1" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">26</text><text x="406.0" y="256" text-anchor="middle" font-size="11" fill="var(--ink-muted)">只改这一层（第几层）· 纵轴：对数概率的变化（nat/token）</text><rect x="52" y="266" width="12" height="12" fill="var(--series-8)" rx="2" /><text x="68" y="276" font-size="11" fill="var(--ink-2)">真实循环里的重复内容</text><rect x="212" y="266" width="12" height="12" fill="var(--series-1)" rx="2" /><text x="228" y="276" font-size="11" fill="var(--ink-2)">正常推理文本</text></svg><details class="table-toggle"><summary>数据表</summary><div class="table-wrap"><table><thead><tr><th>层</th><th>真实循环里的重复内容</th><th>正常推理文本</th></tr></thead><tbody><tr><td>0</td><td>-0.016</td><td>-0.108</td></tr><tr><td>1</td><td>-0.000</td><td>-0.004</td></tr><tr><td>2</td><td>-0.000</td><td>-0.002</td></tr><tr><td>3</td><td>-0.001</td><td>-0.002</td></tr><tr><td>4</td><td>-0.001</td><td>-0.001</td></tr><tr><td>5</td><td>-0.001</td><td>-0.001</td></tr><tr><td>6</td><td>-0.001</td><td>-0.002</td></tr><tr><td>7</td><td>-0.001</td><td>-0.001</td></tr><tr><td>8</td><td>-0.010</td><td>-0.011</td></tr><tr><td>9</td><td>-0.000</td><td>-0.002</td></tr><tr><td>10</td><td>-0.002</td><td>-0.004</td></tr><tr><td>11</td><td>-0.002</td><td>-0.009</td></tr><tr><td>12</td><td>-0.002</td><td>-0.013</td></tr><tr><td>13</td><td>-0.004</td><td>-0.010</td></tr><tr><td>14</td><td>+0.000</td><td>-0.002</td></tr><tr><td>15</td><td>-0.023</td><td>-0.015</td></tr><tr><td>16</td><td>-0.003</td><td>-0.010</td></tr><tr><td>17</td><td>+0.000</td><td>-0.001</td></tr><tr><td>18</td><td>-0.105</td><td>-0.045</td></tr><tr><td>19</td><td>-0.061</td><td>-0.013</td></tr><tr><td>20</td><td>-0.096</td><td>-0.018</td></tr><tr><td>21</td><td>-0.001</td><td>-0.003</td></tr><tr><td>22</td><td>-0.001</td><td>-0.010</td></tr><tr><td>23</td><td>-0.001</td><td>-0.003</td></tr><tr><td>24</td><td>-0.000</td><td>-0.000</td></tr><tr><td>25</td><td>-0.000</td><td>+0.000</td></tr><tr><td>26</td><td>-0.185</td><td>-0.065</td></tr></tbody></table></div></details>
+<p>DianJin 的对照样本直接取自它自己在筛选集里的 9 个真实循环：同一段话<em>第一次写出</em>时的结尾，对比<em>逐字再写一遍</em>时的结尾
+（<code>learnai.weightedit.loop_pair</code>）。同样的字、同样的位置，差别只在“这是重复”。</p>
+<p>上图：每次只改一层，红色是真实循环里重复内容的对数概率变化（越负越好——模型越不想照抄），蓝色是正常推理文本（越接近 0 越好）。
+第 18–20 层最“对症”：改第 20 层让重复内容下降 0.096 nat/token，正常推理只下降 0.018；第 26 层虽然对循环最猛，但正常推理也伤得最多；
+第 0 层只伤正常文本。下表是组合补丁：两层（19+20）把循环压下 0.30，正常推理只付出 0.05；三层（18–20）压得更狠（0.89），
+但正常推理掉 0.18，代价太大。三个随机方向对照几乎全是 0——效果来自诊断出的方向，不是“改了就有”。
+手写的英文重复样例（与诊断无关的数据）上效果一致，说明这个方向不只是记住了那 9 段循环。<strong>选定：第 19+20 层，各 64 列，强度 6。</strong></p>
+<div class="table-wrap"><table><thead><tr><th>补丁</th><th>真实循环</th><th>正常推理</th><th>手写重复样例</th><th>手写正常收尾</th></tr></thead><tbody><tr><td>patch-L20-k6</td><td>-0.093</td><td>-0.023</td><td>-0.131</td><td>+0.002</td></tr><tr><td>patch-L19-20-k6</td><td>-0.298</td><td>-0.049</td><td>-0.170</td><td>+0.004</td></tr><tr><td>patch-L18-19-20-k6</td><td>-0.894</td><td>-0.183</td><td>-0.161</td><td>+0.030</td></tr><tr><td>patch-L19-20-k6-c128</td><td>-0.307</td><td>-0.051</td><td>-0.177</td><td>-0.003</td></tr><tr><td>patch-L20-k6-control</td><td>-0.000</td><td>-0.000</td><td>-0.001</td><td>+0.009</td></tr><tr><td>patch-L19-20-k6-control</td><td>-0.000</td><td>-0.001</td><td>+0.003</td><td>-0.000</td></tr><tr><td>patch-L18-19-20-k6-control</td><td>-0.000</td><td>-0.003</td><td>+0.004</td><td>-0.004</td></tr></tbody></table></div><h3>DianJin-R1-7B：300 道加测题上的生成结果</h3><div class="table-wrap"><table><thead><tr><th>版本</th><th>同题数</th><th>答对：原版 → 编辑后</th><th>修好 / 弄坏</th><th>双侧 p</th><th>撞上限</th><th>其中循环</th><th>token 中位</th></tr></thead><tbody><tr><td>诊断方向编辑<br><span class='mono' style='color:var(--ink-muted)'>patch-L19-20-k6</span></td><td>300</td><td>209 → <strong>215</strong></td><td>+27 / −21</td><td>0.47</td><td>25 → 5</td><td>25 → 3<br><span class='mono' style='color:var(--ink-muted)'>p = 0.000</span></td><td>724 → 785</td></tr><tr><td>随机方向对照<br><span class='mono' style='color:var(--ink-muted)'>patch-L19-20-k6-control</span></td><td>300</td><td>209 → <strong>224</strong></td><td>+28 / −13</td><td>0.03</td><td>25 → 20</td><td>25 → 20<br><span class='mono' style='color:var(--ink-muted)'>p = 0.424</span></td><td>724 → 726</td></tr></tbody></table></div><h3>DianJin-R1-7B：编辑版 vs 随机对照，按原版是否循环分组</h3><div class="table-wrap"><table><thead><tr><th>题目（按原版的表现分组）</th><th>原版答对</th><th>随机对照答对</th><th>编辑版答对</th><th>编辑版 vs 对照：修好 / 弄坏</th><th>循环数：原版 / 对照 / 编辑</th></tr></thead><tbody><tr><td>原版循环的题（25）</td><td>0</td><td>10</td><td><strong>14</strong></td><td>+6 / −2，p = 0.289</td><td>25 / 10 / 0</td></tr><tr><td>原版没循环的题（275）</td><td>209</td><td>214</td><td><strong>201</strong></td><td>+10 / −23，p = 0.035</td><td>0 / 10 / 3</td></tr><tr><td>全部（300）</td><td>209</td><td>224</td><td><strong>215</strong></td><td>+16 / −25，p = 0.211</td><td>25 / 20 / 3</td></tr><tr><td>生成 token 总数 · 用时 · 峰值内存</td><td>662k · 125 分 · 9.5 GiB</td><td>620k · 115 分 · 10.2 GiB</td><td>467k · 80 分 · 9.6 GiB</td><td></td><td></td></tr></tbody></table></div>
+<p><strong>循环确实被修掉了，而且是编辑本身的功劳</strong>：300 道加测题里，原版 25 道循环到上限，编辑版只剩 3 道；
+同样大小、方向随机的对照组还有 20 道（编辑版对对照组：20 道不再循环、3 道新出现，p &lt; 0.001）。
+生成的 token 总数少了 29%，跑完 300 题从 125 分钟降到 80 分钟。</p>
+<p><strong>但正确率没有提高。</strong>编辑版 215 题对，夹在原版（209）和随机对照（224）之间。
+上表按<em>原版</em>的表现把题分成两组（分组只看原版，所以编辑版和对照组都没参与挑题）：
+原版循环的 25 题里，编辑版答对 14 题、对照组 10 题——编辑版确实把一部分循环变成了正确答案；
+可原版没有循环的 275 题里，编辑版答对 201 题、对照组 214 题（修好 10、弄坏 23，p = 0.035）。
+也就是说，编辑在正常题上很可能有一点副作用（约 3–4 个百分点），刚好抵掉循环题上的收益。</p>
+<p class="note">这一组对照最重要的教训是<strong>采样噪声有多大</strong>：随机对照在探针里几乎不改变任何概率，
+跑出来却比原版多对 15 题（修好 28、弄坏 13，p = 0.03）。温度 0.6、每题采一次，两次本应等价的运行有 41/300 道题结果不同；
+循环本身也有一半是偶然的——原版循环的 25 题，对照组只在其中 10 题上再次循环。
+所以单次运行之间 5 个百分点以内的差别，包括前面“4B 比 DianJin 多对 7 题”，都不能当成真的差别。
+没有随机对照，编辑版“+6 题”很容易被误读成编辑有效。</p>
+<h3>Qwen3.5：“反复推翻自己”在哪一层</h3>
+<p>Qwen 的毛病不是循环，而是“已经有答案了还在推翻自己”。第一次尝试照搬论文的做法写对照样本：6 组手写的推理（中英文都有），
+开头都已经得出答案，一个结尾核对一次就收住，另一个结尾接三句不同的质疑（“不过，让我再读一遍题目。或者题目问的其实是……？”）。</p>
+<p class="note">这里踩过一个坑：第一版样本把同一句质疑重复了三遍，结果诊断出的方向一半是“重复”——4B 的探针显示它对循环文本最有效。
+改成每句质疑只说一次之后重做，下面是重做后的结果。</p>
+<p>逐层探针（下图）看起来不错：改第 18 层能让手写的质疑文本概率下降 0.24 nat/token，正常推理几乎不动（−0.002）。
+但<strong>关键的过滤</strong>在下面的候选补丁表里：让模型去读<strong>它自己真实被截断的答案</strong>的最后 512 个 token，
+两层、四层补丁带来的变化都只有 −0.001 到 −0.007 nat/token，<code>&lt;/think&gt;</code> 的概率也几乎不变；9B 同样如此。
+手写样本上有效、真实行为上无效——这个方向学到的是我写的文风，不是模型真实的“反复推翻”。按“先读后跑”的规则，这些补丁<strong>没有进入生成评测</strong>。</p>
+<h3>Qwen3.5-4B</h3><svg viewBox="0 0 760 280" role="img" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto"><line x1="52" x2="750" y1="226.0" y2="226.0" stroke="var(--grid)" /><text x="46" y="230.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.25</text><line x1="52" x2="750" y1="173.0" y2="173.0" stroke="var(--grid)" /><text x="46" y="177.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.19</text><line x1="52" x2="750" y1="120.0" y2="120.0" stroke="var(--grid)" /><text x="46" y="124.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.13</text><line x1="52" x2="750" y1="67.0" y2="67.0" stroke="var(--grid)" /><text x="46" y="71.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.06</text><line x1="52" x2="750" y1="14.0" y2="14.0" stroke="var(--grid)" /><text x="46" y="18.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">+0.00</text><line x1="52" x2="750" y1="14.0" y2="14.0" stroke="var(--axis)" /><rect x="55.8" y="14.0" width="6.5" height="108.5" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 0 层: -0.129</title></rect><rect x="63.3" y="14.0" width="6.5" height="3.4" fill="var(--series-1)"><title>正常推理文本 · 第 0 层: -0.004</title></rect><text x="63.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">0</text><rect x="78.3" y="14.0" width="6.5" height="53.8" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 1 层: -0.064</title></rect><rect x="85.8" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 1 层: +0.000</title></rect><rect x="100.8" y="14.0" width="6.5" height="148.1" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 2 层: -0.176</title></rect><rect x="108.3" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 2 层: -0.001</title></rect><text x="108.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">2</text><rect x="123.3" y="14.0" width="6.5" height="48.8" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 3 层: -0.058</title></rect><rect x="130.8" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 3 层: -0.001</title></rect><rect x="145.8" y="14.0" width="6.5" height="22.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 4 层: -0.027</title></rect><rect x="153.3" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 4 层: +0.000</title></rect><text x="153.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">4</text><rect x="168.3" y="14.0" width="6.5" height="93.4" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 5 层: -0.111</title></rect><rect x="175.8" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 5 层: -0.001</title></rect><rect x="190.8" y="14.0" width="6.5" height="212.0" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 6 层: -0.252</title></rect><rect x="198.4" y="14.0" width="6.5" height="5.9" fill="var(--series-1)"><title>正常推理文本 · 第 6 层: -0.007</title></rect><text x="198.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">6</text><rect x="213.4" y="14.0" width="6.5" height="73.2" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 7 层: -0.087</title></rect><rect x="220.9" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 7 层: -0.001</title></rect><rect x="235.9" y="14.0" width="6.5" height="29.4" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 8 层: -0.035</title></rect><rect x="243.4" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 8 层: -0.001</title></rect><text x="243.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">8</text><rect x="258.4" y="14.0" width="6.5" height="24.4" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 9 层: -0.029</title></rect><rect x="265.9" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 9 层: -0.001</title></rect><rect x="280.9" y="14.0" width="6.5" height="35.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 10 层: -0.042</title></rect><rect x="288.4" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 10 层: -0.001</title></rect><text x="288.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">10</text><rect x="303.4" y="14.0" width="6.5" height="33.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 11 层: -0.040</title></rect><rect x="310.9" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 11 层: +0.000</title></rect><rect x="325.9" y="14.0" width="6.5" height="30.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 12 层: -0.036</title></rect><rect x="333.5" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 12 层: +0.000</title></rect><text x="333.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">12</text><rect x="348.5" y="14.0" width="6.5" height="42.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 13 层: -0.051</title></rect><rect x="356.0" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 13 层: +0.000</title></rect><rect x="371.0" y="14.0" width="6.5" height="62.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 14 层: -0.074</title></rect><rect x="378.5" y="14.0" width="6.5" height="1.7" fill="var(--series-1)"><title>正常推理文本 · 第 14 层: -0.002</title></rect><text x="378.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">14</text><rect x="393.5" y="14.0" width="6.5" height="38.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 15 层: -0.046</title></rect><rect x="401.0" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 15 层: +0.000</title></rect><rect x="416.0" y="14.0" width="6.5" height="65.6" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 16 层: -0.078</title></rect><rect x="423.5" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 16 层: -0.001</title></rect><text x="423.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">16</text><rect x="438.5" y="14.0" width="6.5" height="97.6" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 17 层: -0.116</title></rect><rect x="446.0" y="14.0" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 17 层: -0.001</title></rect><rect x="461.0" y="14.0" width="6.5" height="202.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 18 层: -0.241</title></rect><rect x="468.5" y="14.0" width="6.5" height="1.7" fill="var(--series-1)"><title>正常推理文本 · 第 18 层: -0.002</title></rect><text x="468.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">18</text><rect x="483.6" y="14.0" width="6.5" height="116.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 19 层: -0.139</title></rect><rect x="491.1" y="14.0" width="6.5" height="2.5" fill="var(--series-1)"><title>正常推理文本 · 第 19 层: -0.003</title></rect><rect x="506.1" y="14.0" width="6.5" height="139.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 20 层: -0.166</title></rect><rect x="513.6" y="14.0" width="6.5" height="1.7" fill="var(--series-1)"><title>正常推理文本 · 第 20 层: -0.002</title></rect><text x="513.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">20</text><rect x="528.6" y="14.0" width="6.5" height="67.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 21 层: -0.080</title></rect><rect x="536.1" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 21 层: +0.000</title></rect><rect x="551.1" y="14.0" width="6.5" height="127.0" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 22 层: -0.151</title></rect><rect x="558.6" y="14.0" width="6.5" height="2.5" fill="var(--series-1)"><title>正常推理文本 · 第 22 层: -0.003</title></rect><text x="558.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">22</text><rect x="573.6" y="14.0" width="6.5" height="37.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 23 层: -0.045</title></rect><rect x="581.1" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 23 层: +0.000</title></rect><rect x="596.1" y="14.0" width="6.5" height="42.1" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 24 层: -0.050</title></rect><rect x="603.6" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 24 层: +0.000</title></rect><text x="603.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">24</text><rect x="618.7" y="14.0" width="6.5" height="23.6" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 25 层: -0.028</title></rect><rect x="626.2" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 25 层: +0.000</title></rect><rect x="641.2" y="14.0" width="6.5" height="20.2" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 26 层: -0.024</title></rect><rect x="648.7" y="14.0" width="6.5" height="1.7" fill="var(--series-1)"><title>正常推理文本 · 第 26 层: -0.002</title></rect><text x="648.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">26</text><rect x="663.7" y="14.0" width="6.5" height="37.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 27 层: -0.045</title></rect><rect x="671.2" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 27 层: +0.000</title></rect><rect x="686.2" y="14.0" width="6.5" height="14.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 28 层: -0.017</title></rect><rect x="693.7" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 28 层: +0.000</title></rect><text x="693.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">28</text><rect x="708.7" y="14.0" width="6.5" height="8.4" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 29 层: -0.010</title></rect><rect x="716.2" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 29 层: +0.000</title></rect><rect x="731.2" y="14.0" width="6.5" height="27.8" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 30 层: -0.033</title></rect><rect x="738.7" y="14.0" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 30 层: +0.000</title></rect><text x="738.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">30</text><text x="406.0" y="256" text-anchor="middle" font-size="11" fill="var(--ink-muted)">只改这一层（第几层）· 纵轴：对数概率的变化（nat/token）</text><rect x="52" y="266" width="12" height="12" fill="var(--series-3)" rx="2" /><text x="68" y="276" font-size="11" fill="var(--ink-2)">“再想一遍”的文本</text><rect x="200" y="266" width="12" height="12" fill="var(--series-1)" rx="2" /><text x="216" y="276" font-size="11" fill="var(--ink-2)">正常推理文本</text></svg><details class="table-toggle"><summary>数据表</summary><div class="table-wrap"><table><thead><tr><th>层</th><th>“再想一遍”的文本</th><th>正常推理文本</th></tr></thead><tbody><tr><td>0</td><td>-0.129</td><td>-0.004</td></tr><tr><td>1</td><td>-0.064</td><td>-0.000</td></tr><tr><td>2</td><td>-0.176</td><td>-0.001</td></tr><tr><td>3</td><td>-0.058</td><td>-0.001</td></tr><tr><td>4</td><td>-0.027</td><td>-0.000</td></tr><tr><td>5</td><td>-0.111</td><td>-0.001</td></tr><tr><td>6</td><td>-0.252</td><td>-0.007</td></tr><tr><td>7</td><td>-0.087</td><td>-0.001</td></tr><tr><td>8</td><td>-0.035</td><td>-0.001</td></tr><tr><td>9</td><td>-0.029</td><td>-0.001</td></tr><tr><td>10</td><td>-0.042</td><td>-0.001</td></tr><tr><td>11</td><td>-0.040</td><td>-0.000</td></tr><tr><td>12</td><td>-0.036</td><td>+0.000</td></tr><tr><td>13</td><td>-0.051</td><td>+0.000</td></tr><tr><td>14</td><td>-0.074</td><td>-0.002</td></tr><tr><td>15</td><td>-0.046</td><td>-0.000</td></tr><tr><td>16</td><td>-0.078</td><td>-0.001</td></tr><tr><td>17</td><td>-0.116</td><td>-0.001</td></tr><tr><td>18</td><td>-0.241</td><td>-0.002</td></tr><tr><td>19</td><td>-0.139</td><td>-0.003</td></tr><tr><td>20</td><td>-0.166</td><td>-0.002</td></tr><tr><td>21</td><td>-0.080</td><td>-0.000</td></tr><tr><td>22</td><td>-0.151</td><td>-0.003</td></tr><tr><td>23</td><td>-0.045</td><td>+0.000</td></tr><tr><td>24</td><td>-0.050</td><td>-0.000</td></tr><tr><td>25</td><td>-0.028</td><td>+0.000</td></tr><tr><td>26</td><td>-0.024</td><td>-0.002</td></tr><tr><td>27</td><td>-0.045</td><td>+0.000</td></tr><tr><td>28</td><td>-0.017</td><td>+0.000</td></tr><tr><td>29</td><td>-0.010</td><td>-0.000</td></tr><tr><td>30</td><td>-0.033</td><td>-0.000</td></tr></tbody></table></div></details><h3>Qwen3.5-9B</h3><svg viewBox="0 0 760 280" role="img" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto"><line x1="52" x2="750" y1="226.0" y2="226.0" stroke="var(--grid)" /><text x="46" y="230.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.31</text><line x1="52" x2="750" y1="173.0" y2="173.0" stroke="var(--grid)" /><text x="46" y="177.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.18</text><line x1="52" x2="750" y1="120.0" y2="120.0" stroke="var(--grid)" /><text x="46" y="124.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.05</text><line x1="52" x2="750" y1="67.0" y2="67.0" stroke="var(--grid)" /><text x="46" y="71.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">+0.08</text><line x1="52" x2="750" y1="14.0" y2="14.0" stroke="var(--grid)" /><text x="46" y="18.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">+0.21</text><line x1="52" x2="750" y1="98.8" y2="98.8" stroke="var(--axis)" /><rect x="55.8" y="98.8" width="6.5" height="7.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 0 层: -0.018</title></rect><rect x="63.3" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 0 层: -0.000</title></rect><text x="63.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">0</text><rect x="78.3" y="98.8" width="6.5" height="21.5" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 1 层: -0.053</title></rect><rect x="85.8" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 1 层: -0.000</title></rect><rect x="100.8" y="14.0" width="6.5" height="84.8" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 2 层: +0.209</title></rect><text x="117.8" y="223.0" text-anchor="start" font-size="9" fill="var(--ink)">-1.73</text><rect x="108.3" y="98.8" width="6.5" height="127.2" fill="var(--series-1)"><title>正常推理文本 · 第 2 层: -0.314</title></rect><text x="108.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">2</text><rect x="123.3" y="98.8" width="6.5" height="5.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 3 层: -0.013</title></rect><rect x="130.8" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 3 层: -0.000</title></rect><rect x="145.8" y="98.8" width="6.5" height="6.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 4 层: -0.017</title></rect><rect x="153.3" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 4 层: -0.000</title></rect><text x="153.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">4</text><rect x="168.3" y="98.8" width="6.5" height="40.2" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 5 层: -0.099</title></rect><rect x="175.8" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 5 层: -0.001</title></rect><rect x="190.8" y="98.8" width="6.5" height="32.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 6 层: -0.081</title></rect><rect x="198.4" y="98.8" width="6.5" height="1.2" fill="var(--series-1)"><title>正常推理文本 · 第 6 层: -0.003</title></rect><text x="198.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">6</text><rect x="213.4" y="98.8" width="6.5" height="7.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 7 层: -0.018</title></rect><rect x="220.9" y="98.8" width="6.5" height="1.2" fill="var(--series-1)"><title>正常推理文本 · 第 7 层: -0.003</title></rect><rect x="235.9" y="98.8" width="6.5" height="8.1" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 8 层: -0.020</title></rect><rect x="243.4" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 8 层: -0.000</title></rect><text x="243.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">8</text><rect x="258.4" y="98.8" width="6.5" height="16.6" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 9 层: -0.041</title></rect><rect x="265.9" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 9 层: +0.000</title></rect><rect x="280.9" y="98.8" width="6.5" height="14.6" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 10 层: -0.036</title></rect><rect x="288.4" y="98.4" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 10 层: +0.001</title></rect><text x="288.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">10</text><rect x="303.4" y="98.8" width="6.5" height="7.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 11 层: -0.019</title></rect><rect x="310.9" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 11 层: -0.000</title></rect><rect x="325.9" y="98.8" width="6.5" height="7.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 12 层: -0.018</title></rect><rect x="333.5" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 12 层: -0.000</title></rect><text x="333.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">12</text><rect x="348.5" y="98.8" width="6.5" height="6.1" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 13 层: -0.015</title></rect><rect x="356.0" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 13 层: +0.000</title></rect><rect x="371.0" y="98.8" width="6.5" height="11.8" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 14 层: -0.029</title></rect><rect x="378.5" y="98.8" width="6.5" height="0.8" fill="var(--series-1)"><title>正常推理文本 · 第 14 层: -0.002</title></rect><text x="378.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">14</text><rect x="393.5" y="98.8" width="6.5" height="2.4" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 15 层: -0.006</title></rect><rect x="401.0" y="98.8" width="6.5" height="1.2" fill="var(--series-1)"><title>正常推理文本 · 第 15 层: -0.003</title></rect><rect x="416.0" y="98.8" width="6.5" height="17.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 16 层: -0.044</title></rect><rect x="423.5" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 16 层: -0.001</title></rect><text x="423.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">16</text><rect x="438.5" y="98.8" width="6.5" height="45.0" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 17 层: -0.111</title></rect><rect x="446.0" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 17 层: -0.000</title></rect><rect x="461.0" y="98.8" width="6.5" height="78.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 18 层: -0.193</title></rect><rect x="468.5" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 18 层: -0.001</title></rect><text x="468.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">18</text><rect x="483.6" y="98.8" width="6.5" height="43.0" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 19 层: -0.106</title></rect><rect x="491.1" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 19 层: -0.001</title></rect><rect x="506.1" y="98.8" width="6.5" height="46.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 20 层: -0.115</title></rect><rect x="513.6" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 20 层: -0.001</title></rect><text x="513.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">20</text><rect x="528.6" y="98.8" width="6.5" height="25.2" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 21 层: -0.062</title></rect><rect x="536.1" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 21 层: -0.001</title></rect><rect x="551.1" y="98.8" width="6.5" height="68.2" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 22 层: -0.168</title></rect><rect x="558.6" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 22 层: -0.000</title></rect><text x="558.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">22</text><rect x="573.6" y="98.8" width="6.5" height="15.8" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 23 层: -0.039</title></rect><rect x="581.1" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 23 层: -0.000</title></rect><rect x="596.1" y="98.8" width="6.5" height="20.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 24 层: -0.051</title></rect><rect x="603.6" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 24 层: -0.000</title></rect><text x="603.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">24</text><rect x="618.7" y="98.8" width="6.5" height="10.1" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 25 层: -0.025</title></rect><rect x="626.2" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 25 层: +0.000</title></rect><rect x="641.2" y="98.8" width="6.5" height="2.4" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 26 层: -0.006</title></rect><rect x="648.7" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 26 层: -0.001</title></rect><text x="648.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">26</text><rect x="663.7" y="98.8" width="6.5" height="13.0" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 27 层: -0.032</title></rect><rect x="671.2" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 27 层: -0.000</title></rect><rect x="686.2" y="98.8" width="6.5" height="8.9" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 28 层: -0.022</title></rect><rect x="693.7" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 28 层: -0.000</title></rect><text x="693.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">28</text><rect x="708.7" y="98.8" width="6.5" height="7.7" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 29 层: -0.019</title></rect><rect x="716.2" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 29 层: +0.000</title></rect><rect x="731.2" y="98.8" width="6.5" height="18.3" fill="var(--series-3)"><title>“再想一遍”的文本 · 第 30 层: -0.045</title></rect><rect x="738.7" y="98.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 30 层: -0.000</title></rect><text x="738.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">30</text><text x="406.0" y="256" text-anchor="middle" font-size="11" fill="var(--ink-muted)">只改这一层（第几层）· 纵轴：对数概率的变化（nat/token）</text><rect x="52" y="266" width="12" height="12" fill="var(--series-3)" rx="2" /><text x="68" y="276" font-size="11" fill="var(--ink-2)">“再想一遍”的文本</text><rect x="200" y="266" width="12" height="12" fill="var(--series-1)" rx="2" /><text x="216" y="276" font-size="11" fill="var(--ink-2)">正常推理文本</text></svg><details class="table-toggle"><summary>数据表</summary><div class="table-wrap"><table><thead><tr><th>层</th><th>“再想一遍”的文本</th><th>正常推理文本</th></tr></thead><tbody><tr><td>0</td><td>-0.018</td><td>-0.000</td></tr><tr><td>1</td><td>-0.053</td><td>-0.000</td></tr><tr><td>2</td><td>+0.209</td><td>-1.727</td></tr><tr><td>3</td><td>-0.013</td><td>-0.000</td></tr><tr><td>4</td><td>-0.017</td><td>-0.000</td></tr><tr><td>5</td><td>-0.099</td><td>-0.001</td></tr><tr><td>6</td><td>-0.081</td><td>-0.003</td></tr><tr><td>7</td><td>-0.018</td><td>-0.003</td></tr><tr><td>8</td><td>-0.020</td><td>-0.000</td></tr><tr><td>9</td><td>-0.041</td><td>+0.000</td></tr><tr><td>10</td><td>-0.036</td><td>+0.001</td></tr><tr><td>11</td><td>-0.019</td><td>-0.000</td></tr><tr><td>12</td><td>-0.018</td><td>-0.000</td></tr><tr><td>13</td><td>-0.015</td><td>+0.000</td></tr><tr><td>14</td><td>-0.029</td><td>-0.002</td></tr><tr><td>15</td><td>-0.006</td><td>-0.003</td></tr><tr><td>16</td><td>-0.044</td><td>-0.001</td></tr><tr><td>17</td><td>-0.111</td><td>-0.000</td></tr><tr><td>18</td><td>-0.193</td><td>-0.001</td></tr><tr><td>19</td><td>-0.106</td><td>-0.001</td></tr><tr><td>20</td><td>-0.115</td><td>-0.001</td></tr><tr><td>21</td><td>-0.062</td><td>-0.001</td></tr><tr><td>22</td><td>-0.168</td><td>-0.000</td></tr><tr><td>23</td><td>-0.039</td><td>-0.000</td></tr><tr><td>24</td><td>-0.051</td><td>-0.000</td></tr><tr><td>25</td><td>-0.025</td><td>+0.000</td></tr><tr><td>26</td><td>-0.006</td><td>-0.001</td></tr><tr><td>27</td><td>-0.032</td><td>-0.000</td></tr><tr><td>28</td><td>-0.022</td><td>-0.000</td></tr><tr><td>29</td><td>-0.019</td><td>+0.000</td></tr><tr><td>30</td><td>-0.045</td><td>-0.000</td></tr></tbody></table></div></details><h3>Qwen3.5-4B：候选补丁（文本 / &lt;/think&gt; 的对数概率变化）</h3><div class="table-wrap"><table><thead><tr><th>补丁</th><th>真实截断答案的结尾</th><th>手写“再想一遍”</th><th>正常推理</th><th>正常收尾前 256 token</th></tr></thead><tbody><tr><td>patch-delib-L18-20-k6</td><td>-0.001 / +0.01</td><td>-0.526 / +0.22</td><td>-0.006 / -0.02</td><td>-0.007 / -0.01</td></tr><tr><td>patch-delib-L18-20-k6-control</td><td>-0.001 / +0.05</td><td>+0.000 / +0.06</td><td>-0.000 / +0.02</td><td>-0.002 / +0.06</td></tr><tr><td>patch-delib-L18-19-20-22-k6</td><td>-0.007 / +0.14</td><td>-0.902 / +0.28</td><td>-0.020 / +0.25</td><td>-0.021 / +0.23</td></tr><tr><td>patch-delib-L18-19-20-22-k6-control</td><td>-0.000 / +0.08</td><td>+0.005 / +0.07</td><td>-0.001 / +0.11</td><td>-0.000 / +0.08</td></tr></tbody></table></div><h3>Qwen3.5-9B：候选补丁（文本 / &lt;/think&gt; 的对数概率变化）</h3><div class="table-wrap"><table><thead><tr><th>补丁</th><th>真实截断答案的结尾</th><th>手写“再想一遍”</th><th>正常推理</th><th>正常收尾前 256 token</th></tr></thead><tbody><tr><td>patch-delib-L18-22-k6</td><td>-0.002 / -0.07</td><td>-0.401 / +0.59</td><td>-0.002 / -0.12</td><td>-0.001 / -0.08</td></tr><tr><td>patch-delib-L18-22-k6-control</td><td>-0.000 / +0.02</td><td>+0.004 / -0.01</td><td>+0.000 / +0.06</td><td>-0.000 / +0.03</td></tr><tr><td>patch-delib-L17-18-20-22-k6</td><td>-0.003 / -0.04</td><td>-0.749 / +0.63</td><td>-0.006 / -0.07</td><td>-0.004 / -0.05</td></tr><tr><td>patch-delib-L17-18-20-22-k6-control</td><td>+0.000 / -0.03</td><td>-0.013 / +0.00</td><td>+0.000 / -0.07</td><td>+0.001 / -0.05</td></tr></tbody></table></div><h3>Qwen3.5-4B：用它自己的“分岔点”诊断出的方向</h3>
+<p>第二次尝试改用模型自己的数据：在 4B 的真实答案里找“分岔点”——刚写完一个结论（“So the answer is…”、“所以…”）之后，
+完成的答案接下来写 <code>&lt;/think&gt;</code> 收尾，被截断的答案接下来却另起一行“Wait / If the… / Let's check… / 不过…”。
+各取 48 个这样的时刻，对比激活。这样的对比不是同一道题（会拖长的题本身更难），所以更要靠探针和对照组把关；选层、选补丁、
+是否进入生成，全部按事先写死的规则自动决定（<code>tools/edit_gate.py</code>），通过门槛才会在加测集里 30 道撞上限的题加 30 道没撞的题上做生成评测。</p>
+<p>下图是只改一层时的探针：每一层对“真实截断答案的结尾”（绿）的影响都在 ±0.006 nat/token 以内，而且多数层对正常推理（蓝）的伤害比这还大——没有任何一层“对症”。</p>
+
+<svg viewBox="0 0 760 280" role="img" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto"><line x1="52" x2="750" y1="226.0" y2="226.0" stroke="var(--grid)" /><text x="46" y="230.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.017</text><line x1="52" x2="750" y1="173.0" y2="173.0" stroke="var(--grid)" /><text x="46" y="177.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.012</text><line x1="52" x2="750" y1="120.0" y2="120.0" stroke="var(--grid)" /><text x="46" y="124.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.007</text><line x1="52" x2="750" y1="67.0" y2="67.0" stroke="var(--grid)" /><text x="46" y="71.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">-0.002</text><line x1="52" x2="750" y1="14.0" y2="14.0" stroke="var(--grid)" /><text x="46" y="18.0" text-anchor="end" font-size="10" fill="var(--ink-muted)">+0.003</text><line x1="52" x2="750" y1="45.8" y2="45.8" stroke="var(--axis)" /><rect x="55.8" y="45.8" width="6.5" height="42.4" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 0 层: -0.004</title></rect><rect x="63.3" y="45.8" width="6.5" height="116.6" fill="var(--series-1)"><title>正常推理文本 · 第 0 层: -0.011</title></rect><text x="63.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">0</text><rect x="78.3" y="45.8" width="6.5" height="42.4" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 1 层: -0.004</title></rect><rect x="85.8" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 1 层: -0.002</title></rect><rect x="100.8" y="45.8" width="6.5" height="31.8" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 2 层: -0.003</title></rect><rect x="108.3" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 2 层: -0.002</title></rect><text x="108.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">2</text><rect x="123.3" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 3 层: -0.002</title></rect><rect x="130.8" y="45.8" width="6.5" height="31.8" fill="var(--series-1)"><title>正常推理文本 · 第 3 层: -0.003</title></rect><rect x="145.8" y="45.8" width="6.5" height="42.4" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 4 层: -0.004</title></rect><rect x="153.3" y="45.8" width="6.5" height="31.8" fill="var(--series-1)"><title>正常推理文本 · 第 4 层: -0.003</title></rect><text x="153.3" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">4</text><rect x="168.3" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 5 层: -0.002</title></rect><rect x="175.8" y="45.8" width="6.5" height="31.8" fill="var(--series-1)"><title>正常推理文本 · 第 5 层: -0.003</title></rect><rect x="190.8" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 6 层: -0.002</title></rect><rect x="198.4" y="45.8" width="6.5" height="127.2" fill="var(--series-1)"><title>正常推理文本 · 第 6 层: -0.012</title></rect><text x="198.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">6</text><rect x="213.4" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 7 层: -0.002</title></rect><rect x="220.9" y="45.8" width="6.5" height="31.8" fill="var(--series-1)"><title>正常推理文本 · 第 7 层: -0.003</title></rect><rect x="235.9" y="45.8" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 8 层: -0.001</title></rect><rect x="243.4" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 8 层: -0.002</title></rect><text x="243.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">8</text><rect x="258.4" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 9 层: -0.002</title></rect><rect x="265.9" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 9 层: -0.002</title></rect><rect x="280.9" y="45.8" width="6.5" height="63.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 10 层: -0.006</title></rect><rect x="288.4" y="45.8" width="6.5" height="180.2" fill="var(--series-1)"><title>正常推理文本 · 第 10 层: -0.017</title></rect><text x="288.4" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">10</text><rect x="303.4" y="45.8" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 11 层: -0.001</title></rect><rect x="310.9" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 11 层: -0.002</title></rect><rect x="325.9" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 12 层: -0.002</title></rect><rect x="333.5" y="45.8" width="6.5" height="42.4" fill="var(--series-1)"><title>正常推理文本 · 第 12 层: -0.004</title></rect><text x="333.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">12</text><rect x="348.5" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 13 层: -0.000</title></rect><rect x="356.0" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 13 层: -0.002</title></rect><rect x="371.0" y="45.8" width="6.5" height="42.4" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 14 层: -0.004</title></rect><rect x="378.5" y="45.8" width="6.5" height="148.4" fill="var(--series-1)"><title>正常推理文本 · 第 14 层: -0.014</title></rect><text x="378.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">14</text><rect x="393.5" y="45.8" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 15 层: -0.001</title></rect><rect x="401.0" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 15 层: -0.002</title></rect><rect x="416.0" y="45.8" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 16 层: -0.001</title></rect><rect x="423.5" y="45.8" width="6.5" height="10.6" fill="var(--series-1)"><title>正常推理文本 · 第 16 层: -0.001</title></rect><text x="423.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">16</text><rect x="438.5" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 17 层: -0.000</title></rect><rect x="446.0" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 17 层: -0.002</title></rect><rect x="461.0" y="45.8" width="6.5" height="31.8" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 18 层: -0.003</title></rect><rect x="468.5" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 18 层: -0.000</title></rect><text x="468.5" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">18</text><rect x="483.6" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 19 层: +0.000</title></rect><rect x="491.1" y="45.8" width="6.5" height="31.8" fill="var(--series-1)"><title>正常推理文本 · 第 19 层: -0.003</title></rect><rect x="506.1" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 20 层: -0.000</title></rect><rect x="513.6" y="45.8" width="6.5" height="10.6" fill="var(--series-1)"><title>正常推理文本 · 第 20 层: -0.001</title></rect><text x="513.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">20</text><rect x="528.6" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 21 层: -0.000</title></rect><rect x="536.1" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 21 层: -0.000</title></rect><rect x="551.1" y="45.8" width="6.5" height="21.2" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 22 层: -0.002</title></rect><rect x="558.6" y="45.8" width="6.5" height="10.6" fill="var(--series-1)"><title>正常推理文本 · 第 22 层: -0.001</title></rect><text x="558.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">22</text><rect x="573.6" y="35.2" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 23 层: +0.001</title></rect><rect x="581.1" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 23 层: +0.000</title></rect><rect x="596.1" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 24 层: -0.000</title></rect><rect x="603.6" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 24 层: +0.000</title></rect><text x="603.6" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">24</text><rect x="618.7" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 25 层: -0.000</title></rect><rect x="626.2" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 25 层: +0.000</title></rect><rect x="641.2" y="14.0" width="6.5" height="31.8" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 26 层: +0.003</title></rect><rect x="648.7" y="45.8" width="6.5" height="21.2" fill="var(--series-1)"><title>正常推理文本 · 第 26 层: -0.002</title></rect><text x="648.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">26</text><rect x="663.7" y="35.2" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 27 层: +0.001</title></rect><rect x="671.2" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 27 层: -0.000</title></rect><rect x="686.2" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 28 层: +0.000</title></rect><rect x="693.7" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 28 层: +0.000</title></rect><text x="693.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">28</text><rect x="708.7" y="35.2" width="6.5" height="10.6" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 29 层: +0.001</title></rect><rect x="716.2" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 29 层: +0.000</title></rect><rect x="731.2" y="45.8" width="6.5" height="0.5" fill="var(--series-3)"><title>真实截断答案的结尾 · 第 30 层: +0.000</title></rect><rect x="738.7" y="45.8" width="6.5" height="0.5" fill="var(--series-1)"><title>正常推理文本 · 第 30 层: +0.000</title></rect><text x="738.7" y="240" text-anchor="middle" font-size="10" fill="var(--ink-2)">30</text><text x="406.0" y="256" text-anchor="middle" font-size="11" fill="var(--ink-muted)">只改这一层（第几层）· 纵轴：对数概率的变化（nat/token）</text><rect x="52" y="266" width="12" height="12" fill="var(--series-3)" rx="2" /><text x="68" y="276" font-size="11" fill="var(--ink-2)">真实截断答案的结尾</text><rect x="200" y="266" width="12" height="12" fill="var(--series-1)" rx="2" /><text x="216" y="276" font-size="11" fill="var(--ink-2)">正常推理文本</text></svg><details class="table-toggle"><summary>数据表</summary><div class="table-wrap"><table><thead><tr><th>层</th><th>真实截断答案的结尾</th><th>正常推理文本</th></tr></thead><tbody><tr><td>0</td><td>-0.004</td><td>-0.011</td></tr><tr><td>1</td><td>-0.004</td><td>-0.002</td></tr><tr><td>2</td><td>-0.003</td><td>-0.002</td></tr><tr><td>3</td><td>-0.002</td><td>-0.003</td></tr><tr><td>4</td><td>-0.004</td><td>-0.003</td></tr><tr><td>5</td><td>-0.002</td><td>-0.003</td></tr><tr><td>6</td><td>-0.002</td><td>-0.012</td></tr><tr><td>7</td><td>-0.002</td><td>-0.003</td></tr><tr><td>8</td><td>-0.001</td><td>-0.002</td></tr><tr><td>9</td><td>-0.002</td><td>-0.002</td></tr><tr><td>10</td><td>-0.006</td><td>-0.017</td></tr><tr><td>11</td><td>-0.001</td><td>-0.002</td></tr><tr><td>12</td><td>-0.002</td><td>-0.004</td></tr><tr><td>13</td><td>-0.000</td><td>-0.002</td></tr><tr><td>14</td><td>-0.004</td><td>-0.014</td></tr><tr><td>15</td><td>-0.001</td><td>-0.002</td></tr><tr><td>16</td><td>-0.001</td><td>-0.001</td></tr><tr><td>17</td><td>-0.000</td><td>-0.002</td></tr><tr><td>18</td><td>-0.003</td><td>-0.000</td></tr><tr><td>19</td><td>+0.000</td><td>-0.003</td></tr><tr><td>20</td><td>-0.000</td><td>-0.001</td></tr><tr><td>21</td><td>-0.000</td><td>-0.000</td></tr><tr><td>22</td><td>-0.002</td><td>-0.001</td></tr><tr><td>23</td><td>+0.001</td><td>+0.000</td></tr><tr><td>24</td><td>-0.000</td><td>+0.000</td></tr><tr><td>25</td><td>-0.000</td><td>+0.000</td></tr><tr><td>26</td><td>+0.003</td><td>-0.002</td></tr><tr><td>27</td><td>+0.001</td><td>-0.000</td></tr><tr><td>28</td><td>+0.000</td><td>+0.000</td></tr><tr><td>29</td><td>+0.001</td><td>+0.000</td></tr><tr><td>30</td><td>+0.000</td><td>+0.000</td></tr></tbody></table></div></details><h3>Qwen3.5-4B：按规则选出的补丁（文本 / &lt;/think&gt; 的对数概率变化）</h3><div class="table-wrap"><table><thead><tr><th>补丁</th><th>真实截断答案的结尾</th><th>手写“再想一遍”</th><th>正常推理</th><th>正常收尾前 256 token</th></tr></thead><tbody><tr><td>patch-junc-L4-18-k6</td><td>-0.004 / +0.16</td><td>+0.050 / -0.08</td><td>-0.004 / -0.02</td><td>-0.018 / -0.10</td></tr><tr><td>patch-junc-L4-18-k6-control</td><td>-0.001 / -0.06</td><td>-0.002 / +0.07</td><td>-0.001 / -0.01</td><td>-0.002 / -0.02</td></tr><tr><td>patch-junc-L4-5-7-18-k6</td><td>-0.008 / +0.19</td><td>+0.097 / -0.06</td><td>-0.010 / +0.09</td><td>-0.029 / -0.06</td></tr><tr><td>patch-junc-L4-5-7-18-k6-control</td><td>-0.003 / +0.06</td><td>+0.009 / +0.05</td><td>-0.001 / +0.03</td><td>-0.004 / +0.05</td></tr></tbody></table></div>
+<p><strong>第二次也没有通过门槛，所以没有做生成评测。</strong>按规则选出的两个补丁（第 4+18 层、第 4+5+7+18 层）
+读模型自己的截断答案时，文本概率只变了 −0.004 和 −0.008 nat/token（门槛是 −0.02），
+<code>&lt;/think&gt;</code> 的对数概率只升了 0.16 和 0.19（门槛是 0.5）；随机对照是 −0.001/−0.06 和 −0.003/+0.06。
+比对照组略多一点，但离门槛差了一个数量级；而且这两个补丁反而让手写的“再想一遍”文本更可能出现（+0.05、+0.10）。</p>
+<p><strong>为什么同一套方法修得了循环、修不了“反复推翻”</strong>，探针里的基线数字给了答案：
+DianJin 循环里的重复内容，模型照抄的把握极大（平均对数概率 −0.004，即每个 token 99.6% 确定），
+编辑把它压低 0.3 nat/token，每个 token 抄下去的概率就降到 74%，几十个 token 之后循环必然断掉。
+而 4B 截断答案结尾处 <code>&lt;/think&gt;</code> 的对数概率是 −26.7——要让模型在那里收尾，需要把它抬高二十多个 nat，
+改两层、每层 64 列能给的是 0.2。“循环”是一个很窄、很确定的机制，一刀就能切断；
+“还要再想想”则是分散在整个推理过程里的倾向，不是某一处可以单独关掉的开关。</p>
+<p class="note">这个否定结论只针对这种做法（单一方向、改 MLP 输出列、强度 6）。更大的改动、改注意力、或者干脆用数据微调，
+都可能有效，但都超出了“读懂权重后手改”的范围。对 Qwen 来说，更省事的办法仍是给它足够的上限。</p>
+</section>
+  <section class="panel"><h2>9. 与不联网的 Claude 的差距</h2>
+<p>参照组：把同样的 150 道筛选题、同样的提示词，分成 14 批交给 14 个 Claude 子代理（当时的 Claude Fable 5.1），
+禁止使用任何工具（不搜索、不读文件、不跑代码），只凭自身知识和推理作答，答案用同一个判分器判。</p>
+<p>结果 <strong>138/150 = 92%</strong>（FinQA 88%、CFA 96%、FinanceIQ 92%），比最好的本地模型高 15 个百分点。
+差距最大的是<strong>中文职业考试</strong>：92% 对本地模型的 54–66%。</p>
+<p>差距的构成很有启发：在参照组答对、本地模型答错的题里，9B 有 27/30 是因为想不完被截断，4B 是 16/26，DianJin 是 9/25（循环），Gemma 是 18/32。
+也就是说，<strong>9B 和参照组的差距几乎全是“收不住”，而不是“不会”</strong>——9B 答完的题正确率（92%）和参照组持平。
+DianJin 的差距则大部分是真的答错（知识）。</p>
+<p>有 7 道题五方全错，其中 5 道是 FinQA：读这些题的参考答案，至少 <code>finqa/969</code>（问“表外义务总额”，参考 670，
+而正文明确列出三项表外安排，合计 1,171）和 <code>finqa/1032</code>（变化方向的正负号）是参考答案本身有问题。
+这类题对所有模型一视同仁，影响绝对分数，不影响比较。</p>
+<p class="note">这不是受控对比：Claude 是云端的大模型、没有这里的内存和上限约束、一次读 5–25 道题、推理过程不可见；
+它说明的是“同样的题，前沿模型不联网能做到多少”，即本地模型离天花板还有多远。</p>
+</section>
+  <section class="panel"><h2>10. 推荐与边界</h2>
+<p><strong>推荐：DianJin-R1-7B，4-bit 量化，生成上限 4,096 token。</strong>理由按重要性排：</p>
+<ol>
+<li><strong>正确率与最好的候选打平</strong>：450 题 72.2% 对 Qwen3.5-4B 的 73.8%，差 7 题，远小于采样噪声（两次等价运行就有 41/300 道题结果不同）。</li>
+<li><strong>不需要长思考，所以快、省、稳</strong>：上限从 16k 降到 4k 正确率不变（筛选 76% vs 77%，加测 70% vs 70%），生成量少 40–47%；
+单路一题中位 22 秒，4B 要 88 秒。4k 上限还顺带解决了循环的代价：循环的题原本就答错，截在 4k 只是错得快。</li>
+<li><strong>内存余量大</strong>：权重 4.0 GiB，4k 上限下每路缓存最多约 0.35 GiB，单路使用时进程约 5 GiB，远在 12 GiB 线内。</li>
+<li><strong>中文金融考试略好</strong>：FinanceIQ 合计 150 题 100 对 96（筛选集两者都是 66%，加测 67% vs 63%），差距在噪声内。</li>
+</ol>
+<p><strong>什么时候选别的：</strong>主要做英文年报表格计算（FinQA）、并且能接受一题一两分钟，用 Qwen3.5-4B（16k 上限，不能降）；
+Qwen3.5-9B 答完的题正确率最高（92%，与 Claude 持平），但有 21% 的题 16k 想不完——如果单题可以等十几分钟、给到 32k 以上上限，
+它可能是这几个本地模型里最准的，这一点本研究没有测。</p>
+<p><strong>不推荐使用编辑后的 DianJin。</strong>编辑把循环精确地去掉了，但正确率没有提高、正常题上可能有小副作用；
+同样的省时效果用 4k 上限就能拿到，而且不改权重、没有风险。编辑的价值在于它证明了“循环”在这个金融模型里也是可以定位、可以单独关掉的机制。</p>
+<p><strong>边界：</strong>① 每题只采样一次，450 题的 95% 区间约 ±4 个百分点；② 三个题库都是选择题或单个数值，
+不覆盖开放式分析、写研报、多轮追问；③ FinQA 有少量参考答案本身有误（附录），对所有模型一视同仁；
+④ DianJin 是在金融数据上专门训练过的，FinanceIQ 等公开题可能出现在它的训练集里，它在中文考试上的优势要打个折扣；
+⑤ 所有结论只在这台 Mac、MLX 4-bit 量化下成立，其他量化或推理框架下速度和内存会不同。</p>
+</section>
+  <section class="panel"><h2>附录：方法细节与复现</h2>
+<p>所有代码都在仓库里：题库与判分 <code>learnai/finbench.py</code>，评测运行器 <code>tools/finance_model_select.py</code>
+（generate / summary / curve / compare / failures / regrade / export / grade-answers），权重编辑 <code>learnai/weightedit.py</code>
+与 <code>tools/weight_edit_experiment.py</code>（diagnose / probe / edit），本报告 <code>tools/finance_report.py</code>。
+运行结果在 <code>runs/finbench/</code> 和 <code>runs/weightprog/</code>（不进 git，可重新生成）。英文版的完整方法说明是
+<code>docs/FINANCE_MODEL_SELECTION.md</code>。</p>
+<pre class="mono" style="white-space:pre-wrap;font-size:12.5px">
+python tools/finance_model_select.py generate --model dianjin-r1-7b --n 50              # 筛选 150 题
+python tools/finance_model_select.py generate --model dianjin-r1-7b --n 100 --offset 50 # 加测 300 题
+python tools/finance_model_select.py summary runs/finbench/*/n50-o0.jsonl
+python tools/finance_model_select.py curve   runs/finbench/*/n50-o0.jsonl --caps 1024,2048,4096,8192,16384
+python tools/weight_edit_experiment.py diagnose --model dianjin-r1-7b --pairs real-loops \
+    --finance-runs runs/finbench/dianjin-r1-7b/n50-o0.jsonl --out runs/weightprog/dianjin-r1-7b/diag-realloops.npz
+python tools/weight_edit_experiment.py probe --model dianjin-r1-7b --each-block --diagnosis ... --finance-runs ...
+python tools/finance_report.py                                                              # 生成本页
+</pre>
+<p>统计口径：比例的区间是 95% Wilson 区间；编辑前后的比较是同题配对，p 值是对“改变了结果的题”做的精确二项（McNemar）检验。
+每题只采样一次，所以单题结果有采样噪声——这正是要用随机方向对照组的原因：同样大小、但方向随机的编辑，
+带来多少“修好/弄坏”，就是噪声的尺度。</p>
+</section>
+</div></body>
+</html>

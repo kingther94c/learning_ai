@@ -39,9 +39,92 @@ Then open **`interactive/index.html`** straight off disk — no server required.
 > To recreate it on Apple Silicon:
 >
 > ```bash
-> CONDA_SUBDIR=osx-arm64 conda create -n py313 python=3.13 pip -y
+> CONDA_SUBDIR=osx-arm64 conda create -n py313 -c conda-forge python=3.13 pip nodejs -y
 > make setup
 > ```
+>
+> `nodejs` is only for the JavaScript half of `make test`; any `node` on `PATH`
+> works too.
+
+---
+
+## Run real open-weight models
+
+The lessons rebuild GPT at a size you can print. `learnai.openweights` runs the
+released ones — Qwen, Gemma, gpt-oss — on this Mac through Apple's
+[MLX](https://github.com/ml-explore/mlx), using 4-bit checkpoints from
+Hugging Face's `mlx-community`. Apple silicon only.
+
+```bash
+make llm-setup                  # once: installs mlx-lm, then lists the models
+make chat                       # downloads the default (qwen3.5-4b, 3 GB) and chats
+make chat MODEL=qwen3.8-27b     # any key from `make models`, or an org/name repo id
+make pull MODEL=gemma4-26b-a4b  # download now, chat later (or offline)
+```
+
+`make models` lists each model's size, whether it fits this machine's GPU memory
+budget, and what is already downloaded. Weights never go in the repo: they live
+in the shared Hugging Face cache (`~/.cache/huggingface`), or wherever
+`LEARNAI_MODELS_DIR` points — a big external drive works well, since a model is
+read into memory once at load and the disk only sets the startup time (USB hard
+disk ≈ 120 MB/s, internal SSD ≈ 3 GB/s):
+
+```bash
+conda env config vars set -n py313 "LEARNAI_MODELS_DIR=/Volumes/<drive>/huggingface"
+```
+
+An unplugged drive is reported as such rather than triggering a re-download.
+Run outputs (`runs/`) and downloaded benchmark data (`data/cache/`) are git-ignored too,
+and can live on the same drive behind symlinks
+(`ln -s /Volumes/<drive>/DATA/learning_ai/runs runs`, and likewise for `data/cache`).
+
+After every reply the chat prints tokens/s and peak memory — compare the dense `qwen3.8-27b` with the
+mixture-of-experts `qwen3.6-35b-a3b` to see why decoding speed follows *active*
+parameters while memory follows *total* ones. Inside a chat, `/think` toggles
+the model's reasoning, `/reset` forgets the history.
+
+From Python or a notebook:
+
+```python
+from learnai.openweights import load, generate
+model, tokenizer = load("qwen3.5-4b")
+print(generate(model, tokenizer, "用一句话解释注意力机制。", temperature=0))
+```
+
+### Edit its weights by hand
+
+Fine-tuning is not the only way to change a model. `learnai.weightedit` reads a
+loaded model's activations, finds the direction that separates two behaviours,
+ranks the MLP neurons that write along it, and rewrites their output columns —
+no gradients, a few hundred thousand of four billion weights.
+[`docs/WEIGHT_EDITING.md`](docs/WEIGHT_EDITING.md) uses it to reproduce the edit
+that "Sparks of Weight-Space Programming" (MIT CSAIL, Nov 2026) made to
+Qwen3.5-0.8B, checks the result against the authors' released weights, and then
+ports the recipe to the 4B model and measures what it buys on GSM8K and MATH.
+
+```bash
+R=runs/weightprog/qwen3.5-4b
+python tools/weight_edit_experiment.py diagnose --out $R/diagnosis.npz   # read 12 probe texts
+python tools/weight_edit_experiment.py edit --diagnosis $R/diagnosis.npz --layers 15,19 --out $R/patch.npz
+python tools/weight_edit_experiment.py probe --patch $R/patch.npz        # seconds, no sampling
+make chat MODEL=qwen3.5-4b PATCH=$R/patch.npz                            # talk to the edited model
+```
+
+(Run the `python` lines inside the env: `conda run -n py313 python ...`.)
+
+### Pick a model for a job, under a memory budget
+
+[`docs/FINANCE_MODEL_SELECTION.md`](docs/FINANCE_MODEL_SELECTION.md) compares five
+open-weight models on finance questions — FinQA's report excerpts, CFA-style and
+Chinese professional-exam multiple choice (`learnai.finbench`) — each run inside the
+same 16 GiB budget with its reasoning on, then applies the weight-editing recipe to
+the winner's own failure modes.
+
+```bash
+python tools/finance_model_select.py generate --model qwen3.5-9b --n 50    # 150 questions, 16k cap
+python tools/finance_model_select.py summary runs/finbench/*/n50-o0.jsonl  # accuracy, misses, cost
+python tools/finance_model_select.py curve   runs/finbench/*/n50-o0.jsonl  # ... under smaller caps
+```
 
 ---
 

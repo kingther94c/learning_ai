@@ -19,9 +19,11 @@ venv/
 .mypy_cache/
 .ipynb_checkpoints/
 
-# Data & artifacts (regenerable — see learnai.data)
-data/cache/
-runs/
+# Data & artifacts (regenerable — see learnai.data).  No trailing slash: on the owner's
+# machine these two are symlinks into the external DATA drive, and `dir/` would not
+# match a link.
+/data/cache
+/runs
 *.pt
 *.ckpt
 *.safetensors
